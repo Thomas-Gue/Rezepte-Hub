@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rezept Hub</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Feather Icons für einfache, saubere Icons -->
+    <script src="https://unpkg.com/feather-icons"></script>
+    <!-- marked.js für Markdown-Rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- SortableJS für Drag & Drop -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+</head>
+
+<body>
+    <!-- Hauptansicht (Hub) -->
+    <div class="app-container" id="main-view">
+        <header class="header">
+            <h1>Mein Küchen-Hub</h1>
+            <p class="subtitle">Willkommen zurück! Was kochen wir heute?</p>
+        </header>
+
+        <main class="bento-grid">
+            <!-- Box 1: Zuletzt angesehen (Position getauscht mit Scan) -->
+            <section class="bento-box feature-recent" id="box-recent">
+                <div class="recent-header">
+                    <h2>Zuletzt angesehen</h2>
+                    <i data-feather="clock"></i>
+                </div>
+                <div class="recent-list">
+                    <div class="recent-item">
+                        <div class="recent-img placeholder-img"></div>
+                        <span>Spaghetti Carbonara</span>
+                    </div>
+                    <div class="recent-item">
+                        <div class="recent-img placeholder-img"></div>
+                        <span>Linsen-Dal</span>
+                    </div>
+                    <div class="recent-item">
+                        <div class="recent-img placeholder-img"></div>
+                        <span>Avocado Toast</span>
+                    </div>
+                    <div class="recent-item">
+                        <div class="recent-img placeholder-img"></div>
+                        <span>Tomatensuppe</span>
+                    </div>
+                    <div class="recent-item">
+                        <div class="recent-img placeholder-img"></div>
+                        <span>Pilz-Risotto</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Box 2: Neues Rezept (Position getauscht mit Meine Rezepte) -->
+            <button class="bento-box feature-new-recipe" id="btn-new-recipe">
+                <div class="box-icon-container">
+                    <i data-feather="plus-circle"></i>
+                </div>
+                <h2>Neues Rezept</h2>
+                <p>hast du eine neue Idee?</p>
+            </button>
+
+            <!-- Box 3: Meine Rezepte (mit neuem Suchfeld) -->
+            <div class="bento-box feature-recipes" id="box-recipes">
+                <div class="recipes-header-top">
+                    <div class="box-icon-container">
+                        <i data-feather="book-open"></i>
+                    </div>
+                    <h2>Meine Rezepte</h2>
+                </div>
+                <div class="search-container">
+                    <div class="search-input-wrapper">
+                        <i data-feather="search" class="search-icon"></i>
+                        <input type="text" id="recipe-search" placeholder="Rezept suchen..." autocomplete="off">
+                    </div>
+                    <div class="dropdown-results" id="search-results">
+                        <!-- Ergebnisse werden per JS eingefügt -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Box 4: Kassenzettel scannen -->
+            <button class="bento-box feature-scan" id="btn-scan">
+                <i data-feather="file-text" class="bg-pictogram"></i>
+                <div class="feature-scan-content">
+                    <div class="box-icon-container">
+                        <i data-feather="camera"></i>
+                    </div>
+                    <div>
+                        <h2>Kassenzettel scannen</h2>
+                        <p>Zutaten automatisch per Bilderkennung hinzufügen.</p>
+                    </div>
+                </div>
+            </button>
+        </main>
+    </div>
+
+    <!-- Zweitseite: Rezepte Auflistung im Bento-Design (Standardmäßig ausgeblendet) -->
+    <div class="app-container" id="recipes-view" style="display: none;">
+        <header class="header">
+            <button class="back-btn" id="btn-back-home">
+                <i data-feather="arrow-left"></i> Zurück zum Hub
+            </button>
+            <h1>Meine Rezepte</h1>
+        </header>
+
+        <main class="recipes-bento-grid">
+            <!-- Große Bento-Karte (Featured) -->
+            <div class="recipe-card size-lg">
+                <div class="recipe-badge">Beliebt</div>
+                <div class="recipe-card-img placeholder-img"></div>
+                <div class="recipe-card-info">
+                    <h3>Spaghetti Carbonara</h3>
+                    <p>Der römische Klassiker mit cremigem Eigelb, echtem Guanciale und würzigem Pecorino Romano.</p>
+                    <span class="recipe-meta"><i data-feather="clock"></i> 20 Min. &bull; <i data-feather="star"></i>
+                        4.9</span>
+                </div>
+            </div>
+
+            <!-- Kleine Bento-Karte -->
+            <div class="recipe-card size-sm">
+                <div class="recipe-card-info">
+                    <h3>Linsen-Dal</h3>
+                    <p>Wärmend, cremig und proteinreich mit roten Linsen und Kokosmilch.</p>
+                    <span class="recipe-meta"><i data-feather="clock"></i> 30 Min.</span>
+                </div>
+            </div>
+
+            <!-- Kleine Bento-Karte -->
+            <div class="recipe-card size-sm">
+                <div class="recipe-card-info">
+                    <h3>Avocado Toast</h3>
+                    <p>Schnell, gesund und lecker. Verfeinert mit Chili-Flocken und pochiertem Ei.</p>
+                    <span class="recipe-meta"><i data-feather="clock"></i> 10 Min.</span>
+                </div>
+            </div>
+
+            <!-- Mittlere Bento-Karte -->
+            <div class="recipe-card size-md">
+                <div class="recipe-card-info">
+                    <h3>Pilz-Risotto</h3>
+                    <p>Cremiger Carnaroli-Reis mit aromatischen Waldpilzen, frischem Thymian und Parmesan.</p>
+                    <span class="recipe-meta"><i data-feather="clock"></i> 40 Min. &bull; <i data-feather="star"></i>
+                        4.7</span>
+                </div>
+            </div>
+
+            <!-- Kleine Bento-Karte -->
+            <div class="recipe-card size-sm">
+                <div class="recipe-card-info">
+                    <h3>Tomatensuppe</h3>
+                    <p>Aus im Ofen gerösteten Strauchtomaten und frischem Basilikum.</p>
+                    <span class="recipe-meta"><i data-feather="clock"></i> 25 Min.</span>
+                </div>
+            </div>
+
+            <!-- Kleine Bento-Karte -->
+            <div class="recipe-card size-sm">
+                <div class="recipe-card-info">
+                    <h3>Pfannkuchen</h3>
+                    <p>Fluffige Eierpfannkuchen – süß oder herzhaft belegbar.</p>
+                    <span class="recipe-meta"><i data-feather="clock"></i> 15 Min.</span>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Dritte Seite: Rezept-Detailansicht -->
+    <div class="app-container" id="recipe-view" style="display: none;">
+        <header class="header recipe-view-header">
+            <button class="back-btn" id="btn-back-from-recipe">
+                <i data-feather="arrow-left"></i> Zurück
+            </button>
+            <div class="recipe-view-actions">
+                <button class="action-btn btn-edit" id="btn-edit-recipe">
+                    <i data-feather="edit-2"></i> Bearbeiten
+                </button>
+                <button class="action-btn btn-save" id="btn-save-recipe" style="display:none;">
+                    <i data-feather="save"></i> Speichern
+                </button>
+            </div>
+        </header>
+
+        <main class="recipe-detail-grid">
+            <!-- LINKE SPALTE -->
+            <div class="recipe-left">
+
+                <!-- Titel & Kurzbeschreibung -->
+                <div class="bento-box recipe-info-box">
+                    <h1 class="recipe-title" id="rv-titel" contenteditable="false" data-field="titel">Rezepttitel</h1>
+                    <p class="recipe-short-desc" id="rv-kurzbeschreibung" contenteditable="false" data-field="kurzbeschreibung">Kurze Beschreibung des Rezepts…</p>
+                </div>
+
+                <!-- Key-Property-Badges -->
+                <div class="key-props-grid">
+                    <!-- Schärfe -->
+                    <div class="bento-box key-prop-badge" id="badge-schaerfe">
+                        <span class="badge-icon">🌶</span>
+                        <span class="badge-label">Schärfe</span>
+                        <span class="badge-value" id="rv-schaerfe" contenteditable="false" data-field="schaerfe">1</span>
+                    </div>
+                    <!-- Kalorien -->
+                    <div class="bento-box key-prop-badge" id="badge-kalorien">
+                        <span class="badge-icon">🔥</span>
+                        <span class="badge-label">kcal / Portion</span>
+                        <span class="badge-value" id="rv-kalorien" contenteditable="false" data-field="kalorien">—</span>
+                    </div>
+                    <!-- Kosten -->
+                    <div class="bento-box key-prop-badge" id="badge-kosten">
+                        <span class="badge-icon">💶</span>
+                        <span class="badge-label">Kosten / Portion</span>
+                        <span class="badge-value" id="rv-kosten" contenteditable="false" data-field="kosten">—</span>
+                    </div>
+                    <!-- Dauer -->
+                    <div class="bento-box key-prop-badge" id="badge-dauer">
+                        <span class="badge-icon">⏱</span>
+                        <span class="badge-label">Dauer</span>
+                        <span class="badge-value" id="rv-dauer" contenteditable="false" data-field="dauer">—</span>
+                    </div>
+                    <!-- Nutri-Score -->
+                    <div class="bento-box key-prop-badge nutri-badge" id="badge-nutri">
+                        <span class="badge-icon">🥗</span>
+                        <span class="badge-label">Nutri-Score</span>
+                        <span class="nutri-score-display" id="rv-nutriscore" data-field="nutriScore">C</span>
+                    </div>
+                </div>
+
+                <!-- Sub-Bento: Nährwerte + Zutatenliste -->
+                <div class="sub-bento-grid">
+
+                    <!-- Nährwerte -->
+                    <div class="bento-box naehrwerte-box">
+                        <h3 class="sub-box-title"><i data-feather="activity"></i> Nährwerte</h3>
+                        <div class="naehrwert-row">
+                            <span class="naehrwert-label">Kalorien</span>
+                            <span class="naehrwert-value" id="nw-kalorien">—</span>
+                            <span class="naehrwert-unit">kcal</span>
+                        </div>
+                        <div class="naehrwert-row">
+                            <span class="naehrwert-label">Eiweiß</span>
+                            <span class="naehrwert-value" id="nw-eiweiss">—</span>
+                            <span class="naehrwert-unit">g</span>
+                        </div>
+                        <div class="naehrwert-row">
+                            <span class="naehrwert-label">Kohlenhydrate</span>
+                            <span class="naehrwert-value" id="nw-kh">—</span>
+                            <span class="naehrwert-unit">g</span>
+                        </div>
+                        <div class="naehrwert-row">
+                            <span class="naehrwert-label">Fett</span>
+                            <span class="naehrwert-value" id="nw-fett">—</span>
+                            <span class="naehrwert-unit">g</span>
+                        </div>
+                        <div class="naehrwert-row">
+                            <span class="naehrwert-label">Ballaststoffe</span>
+                            <span class="naehrwert-value" id="nw-ballaststoffe">—</span>
+                            <span class="naehrwert-unit">g</span>
+                        </div>
+                    </div>
+
+                    <!-- Zutatenliste -->
+                    <div class="bento-box zutaten-box">
+                        <div class="ingredient-controls">
+                            <button class="ctrl-btn" id="btn-barcode" title="Barcode scannen">
+                                <i data-feather="maximize-2"></i>
+                            </button>
+                            <button class="ctrl-btn btn-bring" id="btn-bring" title="Zu Bring! hinzufügen">
+                                <span class="bring-icon">🛒</span>
+                            </button>
+                            <div class="portion-stepper">
+                                <button class="stepper-btn" id="btn-portion-down"><i data-feather="minus"></i></button>
+                                <span class="portion-display"><span id="rv-portionen">2</span> Port.</span>
+                                <button class="stepper-btn" id="btn-portion-up"><i data-feather="plus"></i></button>
+                            </div>
+                        </div>
+                        <h3 class="sub-box-title"><i data-feather="list"></i> Zutaten</h3>
+                        <ul class="zutaten-list" id="zutaten-list">
+                            <!-- Wird per JS befüllt -->
+                        </ul>
+                        <button class="add-ingredient-btn" id="btn-add-ingredient" style="display:none;">
+                            <i data-feather="plus"></i> Zutat hinzufügen
+                        </button>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- RECHTE SPALTE: Markdown-Beschreibung -->
+            <div class="recipe-right">
+                <div class="bento-box markdown-box">
+                    <div class="markdown-box-header">
+                        <h3 class="sub-box-title"><i data-feather="file-text"></i> Zubereitung</h3>
+                        <button class="md-toggle-btn" id="btn-md-toggle" title="Zwischen Bearbeiten und Vorschau wechseln" style="display:none;">
+                            <i data-feather="eye"></i>
+                        </button>
+                    </div>
+                    <!-- Render-Ansicht -->
+                    <div class="markdown-content" id="md-rendered"></div>
+                    <!-- Edit-Ansicht -->
+                    <textarea class="markdown-editor" id="md-editor" style="display:none;" placeholder="Rezeptbeschreibung als Markdown eingeben...
+
+Tipp: - [ ] für abhakbare Schritte"></textarea>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
