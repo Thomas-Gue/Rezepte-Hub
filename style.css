@@ -1733,15 +1733,47 @@ body {
 .prep-section-item {
     margin-top: 12px;
     padding: 8px 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
 }
 
 .section-title {
+    flex: 1;
     font-size: 1.1rem;
     font-weight: 700;
     color: var(--accent-dark);
     padding: 4px 8px;
     border-left: 4px solid var(--accent-blue);
     margin-left: -8px;
+}
+
+/* Zubereitung Edit Mode Styles */
+.prep-drag-handle {
+    color: #cbd5e1;
+    cursor: grab;
+    display: none; /* Default versteckt */
+    align-items: center;
+}
+.prep-drag-handle i {
+    width: 14px;
+    height: 14px;
+}
+
+.zubereitung-box .zutat-delete-btn {
+    display: none; /* Default versteckt */
+    opacity: 1; /* Überschreibt opacity 0 von zutat-delete-btn falls vorhanden */
+}
+
+/* Edit Mode Activ */
+.zubereitung-box.is-editing .prep-drag-handle,
+.zubereitung-box.is-editing .zutat-delete-btn {
+    display: flex;
+}
+
+.zubereitung-box.is-editing .box-settings-gear i {
+    color: var(--accent-blue);
+    transform: rotate(90deg);
 }
 
 .prep-actions {
@@ -1754,6 +1786,12 @@ body {
     margin-top: 12px;
     padding-top: 12px;
     border-top: 1px solid #f1f5f9;
+    display: block; /* Override conflicting flex layout */
+}
+
+.zutaten-footer-btns .prep-actions {
+    margin-left: 0;
+    margin-right: 0;
 }
 
 .prep-actions button {

@@ -502,6 +502,8 @@ function parseMarkdownToSteps(mdText) {
     return structure;
 }
 
+let sortablePrep = null;
+
 function renderPreparationEditor(recipe) {
     const list = document.getElementById('prep-steps-list');
     list.innerHTML = '';
@@ -513,11 +515,16 @@ function renderPreparationEditor(recipe) {
         if (item.type === 'section') {
             div.className = 'prep-section-item';
             div.dataset.type = 'section';
-            div.innerHTML = `<h3 class="section-title" contenteditable="true" data-placeholder="Abschnitts-Titel...">${item.text}</h3>`;
+            div.innerHTML = `
+                <span class="prep-drag-handle"><i data-feather="menu"></i></span>
+                <h3 class="section-title" contenteditable="true" data-placeholder="Abschnitts-Titel...">${item.text}</h3>
+                <button class="zutat-delete-btn" title="Abschnitt entfernen" onclick="this.parentElement.remove(); triggerAutosave();"><i data-feather="x"></i></button>
+            `;
         } else {
             div.className = 'prep-step-item' + (item.completed ? ' is-completed' : '');
             div.dataset.type = 'step';
             div.innerHTML = `
+                <span class="prep-drag-handle"><i data-feather="menu"></i></span>
                 <span class="step-number" onclick="toggleStepCompleted(this)" title="Status umschalten">${stepCount++}</span>
                 <div class="step-content" contenteditable="true" data-placeholder="Schritt beschreiben...">${item.text}</div>
                 <button class="zutat-delete-btn" title="Schritt entfernen" onclick="this.parentElement.remove(); triggerAutosave();"><i data-feather="x"></i></button>
@@ -527,11 +534,17 @@ function renderPreparationEditor(recipe) {
     });
     if (typeof feather !== 'undefined') feather.replace();
     
+    const box = document.querySelector('.zubereitung-box');
+    const isEditing = box && box.classList.contains('is-editing');
+
     // Sortable für die gesamte Liste (erlaubt Verschieben über Sektionen hinweg)
+    if (sortablePrep) sortablePrep.destroy();
     if (typeof Sortable !== 'undefined') {
-        new Sortable(list, {
+        sortablePrep = new Sortable(list, {
+            handle: '.prep-drag-handle',
             animation: 150,
             ghostClass: 'sortable-ghost',
+            disabled: !isEditing, // Nur wenn im Edit-Modus aktiv
             onEnd: () => {
                 syncPreparationToMarkdown();
                 triggerAutosave();
@@ -1325,6 +1338,17 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-delete-ingredient-detail')?.addEventListener('click', () => {
         deleteIngredient(selectedIngredientIndex);
         closeIngredientModal();
+    });
+
+    // Preparation Editor Settings Toggle
+    document.getElementById('btn-prep-settings')?.addEventListener('click', () => {
+        const box = document.querySelector('.zubereitung-box');
+        if (box) {
+            const isEditing = box.classList.toggle('is-editing');
+            if (sortablePrep) {
+                sortablePrep.option('disabled', !isEditing);
+            }
+        }
     });
 
     // Preparation Editor
