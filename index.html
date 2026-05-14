@@ -129,7 +129,8 @@
 
                 <!-- Titel & Kurzbeschreibung -->
                 <div class="bento-box recipe-info-box">
-                    <h1 class="recipe-title" id="rv-titel" contenteditable="true" data-field="titel" data-placeholder="Rezepttitel eingeben..."></h1>
+                    <h1 class="recipe-title" id="rv-titel" contenteditable="true" data-field="titel"
+                        data-placeholder="Rezepttitel eingeben..."></h1>
                     <p class="recipe-short-desc" id="rv-kurzbeschreibung" contenteditable="true"
                         data-field="kurzbeschreibung" data-placeholder="Kurze Beschreibung des Rezepts…"></p>
                 </div>
@@ -140,8 +141,7 @@
                     <div class="bento-box key-prop-badge" id="badge-kalorien">
                         <span class="badge-icon">🔥</span>
                         <span class="badge-label">kcal / Portion</span>
-                        <span class="badge-value" id="rv-kalorien" contenteditable="true"
-                            data-field="kalorien">0</span>
+                        <span class="badge-value" id="rv-kalorien" contenteditable="true" data-field="kalorien">0</span>
                     </div>
                     <!-- Kosten -->
                     <div class="bento-box key-prop-badge" id="badge-kosten">
@@ -232,7 +232,7 @@
                             </div>
                         </div>
                         <h3 class="sub-box-title"><i data-feather="list"></i> Zutaten</h3>
-                        
+
                         <ul class="zutaten-list" id="zutaten-list">
                             <!-- Wird per JS befüllt -->
                         </ul>
@@ -241,10 +241,12 @@
                             <div class="prep-actions">
                                 <!-- Suche im Design des manuellen Buttons -->
                                 <div class="search-input-wrapper dashed-search" id="inline-search-container">
-                                    <input type="text" id="inline-ingredient-search" placeholder="Zutat suchen & hinzufügen..." autocomplete="off">
-                                    <div id="inline-search-results" class="ingredient-dropdown" style="display: none;"></div>
+                                    <input type="text" id="inline-ingredient-search" placeholder="Zutat hinzufügen..."
+                                        autocomplete="off">
+                                    <div id="inline-search-results" class="ingredient-dropdown" style="display: none;">
+                                    </div>
                                 </div>
-                                
+
                                 <button class="add-section-btn" id="btn-barcode-inline" title="Barcode scannen">
                                     <svg class="barcode-icon" viewBox="0 0 40 28" fill="currentColor"
                                         xmlns="http://www.w3.org/2000/svg" style="width: 20px; height: 14px;">
@@ -279,8 +281,10 @@
                             <!-- Dynamisch: Schritte und Abschnitte -->
                         </div>
                         <div class="prep-actions">
-                            <button class="add-step-btn" id="btn-add-step"><i data-feather="plus"></i> Schritt hinzufügen</button>
-                            <button class="add-section-btn" id="btn-add-section"><i data-feather="plus-square"></i> Abschnitt hinzufügen</button>
+                            <button class="add-step-btn" id="btn-add-step"><i data-feather="plus"></i> Schritt
+                                hinzufügen</button>
+                            <button class="add-section-btn" id="btn-add-section"><i data-feather="plus-square"></i>
+                                Abschnitt hinzufügen</button>
                         </div>
                     </div>
                 </div>
@@ -328,11 +332,13 @@
         <div class="modal-content" style="max-width: 460px;">
             <button class="modal-close-btn" id="btn-close-search-modal">&times;</button>
             <h2 style="margin-bottom: 8px;">Produkt suchen</h2>
-            <p class="modal-subtitle" style="margin-bottom: 16px;">Tippe einen Produktnamen und wähle aus dem Dropdown.</p>
+            <p class="modal-subtitle" style="margin-bottom: 16px;">Tippe einen Produktnamen und wähle aus dem Dropdown.
+            </p>
             <div class="ingredient-search-wrapper" style="margin-top: 0;">
                 <div class="ingredient-search-input-row">
                     <i data-feather="search" class="ingredient-search-icon"></i>
-                    <input type="text" id="standalone-search-input" placeholder="z. B. Kartoffeln, Tomaten…" autocomplete="off">
+                    <input type="text" id="standalone-search-input" placeholder="z. B. Kartoffeln, Tomaten…"
+                        autocomplete="off">
                 </div>
                 <div id="standalone-search-results" class="ingredient-dropdown" style="display: none;"></div>
             </div>
@@ -350,10 +356,12 @@
             <h2 style="margin-bottom: 12px;">Portionen anpassen</h2>
             <p class="modal-subtitle">Wieviele Portionen ergibt dieses Rezept standardmäßig?</p>
             <div class="portion-input-row" style="margin-top: 20px;">
-                <input type="number" id="manual-portion-input" min="1" step="1" style="width: 80px; padding: 10px; border-radius: 12px; border: 1px solid #e2e8f0; font-size: 1.2rem; text-align: center;">
+                <input type="number" id="manual-portion-input" min="1" step="1"
+                    style="width: 80px; padding: 10px; border-radius: 12px; border: 1px solid #e2e8f0; font-size: 1.2rem; text-align: center;">
                 <span style="font-size: 1.1rem; font-weight: 500;">Portionen</span>
             </div>
-            <button class="action-btn btn-save" id="btn-save-portions" style="width: 100%; margin-top: 24px; justify-content: center;">Übernehmen & Speichern</button>
+            <button class="action-btn btn-save" id="btn-save-portions"
+                style="width: 100%; margin-top: 24px; justify-content: center;">Übernehmen & Speichern</button>
         </div>
     </div>
 
@@ -363,8 +371,9 @@
             <button class="modal-close-btn" id="btn-close-ingredient-modal">&times;</button>
             <h2 id="modal-ingredient-name">Zutat Details</h2>
             <p class="modal-subtitle" id="modal-ingredient-barcode" style="font-family: monospace;"></p>
-            
-            <div class="modal-nutrition-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 20px;">
+
+            <div class="modal-nutrition-grid"
+                style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 20px;">
                 <!-- Nährwerte der Zutat pro 100g editierbar -->
                 <div class="modal-field">
                     <label>kcal / 100g</label>
@@ -383,10 +392,12 @@
                     <input type="number" id="mi-carbs" step="0.1">
                 </div>
             </div>
-            
+
             <div class="modal-actions" style="margin-top: 24px; display: flex; gap: 12px;">
-                <button class="action-btn btn-save" id="btn-save-ingredient-detail" style="flex: 1; justify-content: center;">Sichern</button>
-                <button class="action-btn btn-edit" id="btn-delete-ingredient-detail" style="flex: 1; justify-content: center; background: #fee2e2; color: #b91c1c; border-color: #fca5a5;">Löschen</button>
+                <button class="action-btn btn-save" id="btn-save-ingredient-detail"
+                    style="flex: 1; justify-content: center;">Sichern</button>
+                <button class="action-btn btn-edit" id="btn-delete-ingredient-detail"
+                    style="flex: 1; justify-content: center; background: #fee2e2; color: #b91c1c; border-color: #fca5a5;">Löschen</button>
             </div>
         </div>
     </div>
