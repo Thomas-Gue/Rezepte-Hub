@@ -869,6 +869,8 @@ function addIngredient() {
 let cameraStream = null;
 let scannerLoopId = null;
 let nativeBarcodeDetector = null;
+let videoDevices = [];
+let currentDeviceIndex = 0;
 
 if ('BarcodeDetector' in window) {
     BarcodeDetector.getSupportedFormats()
@@ -899,12 +901,43 @@ async function startCameraScanner() {
     }
 
     try {
-        cameraStream = await navigator.mediaDevices.getUserMedia({
-            video: { 
-                facingMode: 'environment',
-                advanced: [{ focusMode: 'continuous' }, { zoom: 2.0 }]
+        // Liste alle Video-Eingabegeräte auf, falls wir das noch nicht getan haben
+        if (videoDevices.length === 0) {
+            const allDevices = await navigator.mediaDevices.enumerateDevices();
+            // Filtere Rückkameras heraus (oder alle, falls keine klaren Labels vorhanden)
+            let backCameras = allDevices.filter(device => device.kind === 'videoinput' && 
+                (device.label.toLowerCase().includes('back') || 
+                 device.label.toLowerCase().includes('rear') || 
+                 device.label.includes('0') || 
+                 device.label.includes('1') || 
+                 !device.label.toLowerCase().includes('front')));
+            
+            // Fallback, falls der Filter alles aussortiert
+            if (backCameras.length === 0) {
+                backCameras = allDevices.filter(device => device.kind === 'videoinput');
             }
-        });
+            videoDevices = backCameras;
+
+            // Finde initial eine gute Linse (kein Ultra-Wide)
+            const preferredIndex = videoDevices.findIndex(d => 
+                !d.label.toLowerCase().includes('ultra') && 
+                !d.label.toLowerCase().includes('wide')
+            );
+            if (preferredIndex !== -1) {
+                currentDeviceIndex = preferredIndex;
+            }
+        }
+
+        let constraints = { video: { facingMode: 'environment', advanced: [{ focusMode: 'continuous' }, { zoom: 2.0 }] } };
+
+        if (videoDevices.length > 0) {
+            constraints.video = {
+                deviceId: { exact: videoDevices[currentDeviceIndex].deviceId },
+                advanced: [{ focusMode: 'continuous' }, { zoom: 2.0 }]
+            };
+        }
+
+        cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
         video.srcObject = cameraStream;
         
         // Warten bis Metadaten geladen sind um das Video abzuspielen
@@ -1010,6 +1043,16 @@ function stopCameraScanner() {
     if (video) {
         video.srcObject = null;
     }
+}
+
+async function switchCamera() {
+    if (videoDevices.length <= 1) {
+        showToast('Info', 'Keine weiteren Kameras zum Umschalten gefunden.', false);
+        return;
+    }
+    stopCameraScanner();
+    currentDeviceIndex = (currentDeviceIndex + 1) % videoDevices.length;
+    await startCameraScanner();
 }
 
 // ============================================================
@@ -1457,6 +1500,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('barcode-modal').style.display = 'none';
         stopCameraScanner();
     });
+    document.getElementById('btn-switch-camera')?.addEventListener('click', switchCamera);
 
     // Stepper
     document.getElementById('btn-portion-up')?.addEventListener('click', () => updatePortions(currentPortion + 1));
