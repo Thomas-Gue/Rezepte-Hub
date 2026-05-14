@@ -171,14 +171,15 @@ let recipes = {}; // Geladen von Cache / Firebase / Fallback
 let currentRecipe = null;
 let basePortion = 1;
 let currentPortion = 1;
-let isEditMode = false;
-let mdShowingEditor = false;
 let sortableIngredients = null;
 let recentRecipeIds = [];
 let html5Qrcode = null;             // Kamera-Scanner Instanz
 let productCache = {};              // In-Memory-Cache: Barcode → Produkt-Daten
 let ingredientSearchCache = {};     // In-Memory-Cache: Suchbegriff → Ergebnisliste
 let scanCooldown = false;           // Verhindert mehrfaches Auslösen des gleichen Frames
+let autosaveTimeout = null;
+let selectedIngredientIndex = -1;   // Für das Detail-Modal
+
 
 // ============================================================
 // PERFORMANCE UTILITIES
@@ -344,11 +345,73 @@ function scoreToLetter(score) {
 function applyNutriScore(score) {
     const scaleEl = document.getElementById('rv-nutriscore');
     if (!scaleEl) return;
-    const upper = score.toUpperCase();
+    const upper = (score || 'C').toUpperCase();
     scaleEl.dataset.score = upper;
     scaleEl.querySelectorAll('.nutri-seg').forEach(seg => {
         seg.classList.toggle('active', seg.dataset.letter === upper);
     });
+}
+
+// ============================================================
+// NUTRITION PER PORTION CALCULATOR (NEW)
+// ============================================================
+function getNutritionPerPortion(recipe) {
+    const portionen = Math.max(1, recipe.portionen || 1);
+    const nw = recipe.naehrwerte || {};
+
+    // Gesamtgewicht aus Zutaten berechnen (nur g/ml/kg/l)
+    let totalGrams = 0;
+    (recipe.zutaten || []).forEach(z => {
+        const unit = (z.einheit || '').toLowerCase().trim();
+        const menge = parseFloat(z.menge) || 0;
+        if (unit === 'g' || unit === 'ml') totalGrams += menge;
+        else if (unit === 'kg' || unit === 'l') totalGrams += menge * 1000;
+    });
+
+    // Wenn kein auswertbares Gewicht vorhanden: Fallback auf 100g-Werte
+    if (totalGrams === 0) {
+        return {
+            'energy-kcal': nw['energy-kcal_100g'] !== undefined ? nw['energy-kcal_100g'] : null,
+            'fat':          nw['fat_100g']          !== undefined ? nw['fat_100g']          : null,
+            'saturated-fat':nw['saturated-fat_100g']!== undefined ? nw['saturated-fat_100g']: null,
+            'carbohydrates':nw['carbohydrates_100g'] !== undefined ? nw['carbohydrates_100g']: null,
+            'sugars':       nw['sugars_100g']       !== undefined ? nw['sugars_100g']       : null,
+            'fiber':        nw['fiber_100g']        !== undefined ? nw['fiber_100g']        : null,
+            'proteins':     nw['proteins_100g']     !== undefined ? nw['proteins_100g']     : null,
+            'salt':         nw['salt_100g']         !== undefined ? nw['salt_100g']         : null,
+            isFallback: true
+        };
+    }
+
+    const gramsPerPortion = totalGrams / portionen;
+    const round1 = v => Math.round(v * 10) / 10;
+
+    return {
+        'energy-kcal': nw['energy-kcal_100g'] !== undefined
+            ? Math.round(nw['energy-kcal_100g'] * gramsPerPortion / 100) : null,
+        'fat':          nw['fat_100g']          !== undefined ? round1(nw['fat_100g']          * gramsPerPortion / 100) : null,
+        'saturated-fat':nw['saturated-fat_100g']!== undefined ? round1(nw['saturated-fat_100g']* gramsPerPortion / 100) : null,
+        'carbohydrates':nw['carbohydrates_100g'] !== undefined ? round1(nw['carbohydrates_100g'] * gramsPerPortion / 100) : null,
+        'sugars':       nw['sugars_100g']       !== undefined ? round1(nw['sugars_100g']       * gramsPerPortion / 100) : null,
+        'fiber':        nw['fiber_100g']        !== undefined ? round1(nw['fiber_100g']        * gramsPerPortion / 100) : null,
+        'proteins':     nw['proteins_100g']     !== undefined ? round1(nw['proteins_100g']     * gramsPerPortion / 100) : null,
+        'salt':         nw['salt_100g']         !== undefined ? round1(nw['salt_100g']         * gramsPerPortion / 100) : null,
+        isFallback: false
+    };
+}
+
+function updateNutritionDisplay(recipe) {
+    const per = getNutritionPerPortion(recipe);
+    const fmt = v => (v !== null && v !== undefined) ? v : '—';
+
+    document.getElementById('nw-energy-kcal').textContent  = fmt(per['energy-kcal']);
+    document.getElementById('nw-fat').textContent          = fmt(per['fat']);
+    document.getElementById('nw-saturated-fat').textContent= fmt(per['saturated-fat']);
+    document.getElementById('nw-carbohydrates').textContent= fmt(per['carbohydrates']);
+    document.getElementById('nw-sugars').textContent       = fmt(per['sugars']);
+    document.getElementById('nw-fiber').textContent        = fmt(per['fiber']);
+    document.getElementById('nw-proteins').textContent     = fmt(per['proteins']);
+    document.getElementById('nw-salt').textContent         = fmt(per['salt']);
 }
 
 // ============================================================
@@ -418,49 +481,131 @@ function recalculateRecipeNutrition(recipe) {
 // ============================================================
 // MARKDOWN RENDERER WITH INTERACTIVE TASK ITEMS
 // ============================================================
-function renderMarkdown(mdText) {
-    const container = document.getElementById('md-rendered');
-    container.innerHTML = marked.parse(mdText, { breaks: true });
-
-    // Ersetze Standard-Checkboxes durch interaktive Elemente
-    container.querySelectorAll('li').forEach(li => {
-        const checkbox = li.querySelector('input[type="checkbox"]');
-        if (!checkbox) return;
-
-        const isChecked = checkbox.checked;
-        const label = li.textContent.replace(/^\s*\[.?\]\s*/, '').trim();
-
-        const taskEl = document.createElement('li');
-        taskEl.className = 'md-task-item' + (isChecked ? ' checked' : '');
-        taskEl.dataset.checked = isChecked ? 'true' : 'false';
-        taskEl.innerHTML = `
-            <span class="task-drag-handle" title="Verschieben">⠿</span>
-            <input type="checkbox" ${isChecked ? 'checked' : ''}>
-            <span>${label}</span>
-        `;
-
-        const cb = taskEl.querySelector('input[type="checkbox"]');
-        cb.addEventListener('change', () => {
-            taskEl.classList.toggle('checked', cb.checked);
-            taskEl.dataset.checked = String(cb.checked);
-        });
-
-        li.replaceWith(taskEl);
+// ============================================================
+// PREPARATION STEPS & SECTIONS ENGINE
+// ============================================================
+function parseMarkdownToSteps(mdText) {
+    const lines = mdText.split('\n');
+    const structure = [];
+    lines.forEach(line => {
+        const clean = line.trim();
+        if (clean.startsWith('##')) {
+            structure.push({ type: 'section', text: clean.replace('##', '').trim() });
+        } else if (clean.startsWith('- [x]')) {
+            structure.push({ type: 'step', text: clean.replace('- [x]', '').trim(), completed: true });
+        } else if (clean.startsWith('- [ ]')) {
+            structure.push({ type: 'step', text: clean.replace('- [ ]', '').trim(), completed: false });
+        } else if (clean.length > 0) {
+            structure.push({ type: 'step', text: clean, completed: false });
+        }
     });
+    return structure;
+}
 
-    // Drag & Drop für Kochschritte
+function renderPreparationEditor(recipe) {
+    const list = document.getElementById('prep-steps-list');
+    list.innerHTML = '';
+    const structure = parseMarkdownToSteps(recipe.beschreibung || '');
+    
+    let stepCount = 1;
+    structure.forEach((item, index) => {
+        const div = document.createElement('div');
+        if (item.type === 'section') {
+            div.className = 'prep-section-item';
+            div.dataset.type = 'section';
+            div.innerHTML = `<h3 class="section-title" contenteditable="true" data-placeholder="Abschnitts-Titel...">${item.text}</h3>`;
+        } else {
+            div.className = 'prep-step-item' + (item.completed ? ' is-completed' : '');
+            div.dataset.type = 'step';
+            div.innerHTML = `
+                <span class="step-number" onclick="toggleStepCompleted(this)" title="Status umschalten">${stepCount++}</span>
+                <div class="step-content" contenteditable="true" data-placeholder="Schritt beschreiben...">${item.text}</div>
+                <button class="zutat-delete-btn" title="Schritt entfernen" onclick="this.parentElement.remove(); triggerAutosave();"><i data-feather="x"></i></button>
+            `;
+        }
+        list.appendChild(div);
+    });
+    if (typeof feather !== 'undefined') feather.replace();
+    
+    // Sortable für die gesamte Liste (erlaubt Verschieben über Sektionen hinweg)
     if (typeof Sortable !== 'undefined') {
-        container.querySelectorAll('ul').forEach(ul => {
-            if (ul.querySelector('.md-task-item')) {
-                new Sortable(ul, {
-                    handle: '.task-drag-handle',
-                    animation: 150,
-                    ghostClass: 'sortable-ghost',
-                });
+        new Sortable(list, {
+            animation: 150,
+            ghostClass: 'sortable-ghost',
+            onEnd: () => {
+                syncPreparationToMarkdown();
+                triggerAutosave();
+                renderPreparationEditor(currentRecipe); // Re-render um Nummern zu korrigieren
             }
         });
     }
+
+    // Event-Listener für Änderungen
+    list.querySelectorAll('[contenteditable="true"]').forEach(el => {
+        el.addEventListener('input', () => triggerAutosave());
+    });
 }
+
+function toggleStepCompleted(el) {
+    const parent = el.parentElement;
+    parent.classList.toggle('is-completed');
+    syncPreparationToMarkdown();
+    triggerAutosave();
+}
+
+function syncPreparationToMarkdown() {
+    const list = document.getElementById('prep-steps-list');
+    let md = '';
+    list.childNodes.forEach(node => {
+        const title = node.querySelector('.section-title');
+        const content = node.querySelector('.step-content');
+        const isCompleted = node.classList.contains('is-completed');
+        
+        if (title) {
+            md += `\n## ${title.textContent.trim()}\n`;
+        } else if (content) {
+            const prefix = isCompleted ? '- [x]' : '- [ ]';
+            md += `${prefix} ${content.textContent.trim()}\n`;
+        }
+    });
+    currentRecipe.beschreibung = md.trim();
+}
+
+
+function addPrepStep() {
+    syncPreparationToMarkdown();
+    currentRecipe.beschreibung += '\n- [ ] ';
+    renderPreparationEditor(currentRecipe);
+    triggerAutosave();
+    
+    // Focus auf das letzte Element
+    setTimeout(() => {
+        const items = document.querySelectorAll('.prep-step-item .step-content');
+        if (items.length) items[items.length - 1].focus();
+    }, 50);
+}
+
+function addPrepSection() {
+    syncPreparationToMarkdown();
+    currentRecipe.beschreibung += '\n## ';
+    renderPreparationEditor(currentRecipe);
+    triggerAutosave();
+
+    // Focus auf das letzte Element
+    setTimeout(() => {
+        const items = document.querySelectorAll('.prep-section-item .section-title');
+        if (items.length) items[items.length - 1].focus();
+    }, 50);
+}
+
+function deletePrepItem(index) {
+    // Diese Funktion wird durch die Inline-Delete-Logik in renderPreparationEditor ersetzt
+    syncPreparationToMarkdown();
+    renderPreparationEditor(currentRecipe);
+    triggerAutosave();
+}
+
+
 
 // ============================================================
 // INGREDIENT RENDERER
@@ -469,32 +614,31 @@ function renderIngredients(zutaten, curPort, basePort) {
     const list = document.getElementById('zutaten-list');
     list.innerHTML = '';
 
-    zutaten.forEach((z) => {
+    zutaten.forEach((z, index) => {
         const scaledMenge = Math.round((z.menge * curPort / basePort) * 10) / 10;
         const li = document.createElement('li');
         li.className = 'zutat-item';
+        li.onclick = () => openIngredientModal(index);
         
-        // Erhalte Metadaten über Data-Schnittstelle
         if (z.barcode) li.dataset.barcode = z.barcode;
         if (z.naehrwerte) li.dataset.naehrwerte = JSON.stringify(z.naehrwerte);
-        if (z.nutriScoreValue !== undefined) li.dataset.nutriscore = z.nutriScoreValue;
-        
-        const barcodeBadge = z.barcode ? `<span class="barcode-badge-mini" style="font-size:0.8rem; margin-left: 6px; cursor:help;" title="Barcode: ${z.barcode}">🏷️</span>` : '';
 
         li.innerHTML = `
             <span class="zutat-drag-handle"><i data-feather="menu"></i></span>
-            <span class="zutat-menge" contenteditable="false" data-base="${z.menge}">${scaledMenge}</span>
-            <span class="zutat-einheit" contenteditable="false">${z.einheit}</span>
-            <span class="zutat-name" contenteditable="false">${z.name}${barcodeBadge}</span>
-            <button class="zutat-delete-btn" title="Zutat entfernen" style="display:none;"><i data-feather="x"></i></button>
+            <span class="zutat-menge" contenteditable="true" data-base="${z.menge}" onclick="event.stopPropagation()">${scaledMenge}</span>
+            <span class="zutat-einheit" contenteditable="true" onclick="event.stopPropagation()">${z.einheit}</span>
+            <span class="zutat-name" contenteditable="true" onclick="event.stopPropagation()">${z.name}</span>
+            <button class="zutat-delete-btn" title="Zutat entfernen" onclick="event.stopPropagation(); deleteIngredient(${index})"><i data-feather="x"></i></button>
         `;
         list.appendChild(li);
+
+        // Autosave an hängen
+        li.querySelectorAll('[contenteditable="true"]').forEach(el => {
+            el.addEventListener('input', () => triggerAutosave());
+        });
     });
 
-    // Nur das Zutaten-Feld mit Feather anpassen (Performance-Optimierung)
-    if (typeof feather !== 'undefined') {
-        feather.replace();
-    }
+    if (typeof feather !== 'undefined') feather.replace();
 
     if (sortableIngredients) sortableIngredients.destroy();
     if (typeof Sortable !== 'undefined') {
@@ -502,10 +646,27 @@ function renderIngredients(zutaten, curPort, basePort) {
             handle: '.zutat-drag-handle',
             animation: 150,
             ghostClass: 'sortable-ghost',
-            dragClass: 'sortable-drag',
+            onEnd: () => {
+                syncIngredientsFromDOM();
+                triggerAutosave();
+            }
         });
     }
 }
+
+function syncIngredientsFromDOM() {
+    const items = document.querySelectorAll('.zutat-item');
+    currentRecipe.zutaten = Array.from(items).map(li => {
+        return {
+            menge: parseFloat(li.querySelector('.zutat-menge').textContent) || 0,
+            einheit: li.querySelector('.zutat-einheit').textContent.trim(),
+            name: li.querySelector('.zutat-name').textContent.trim(),
+            barcode: li.dataset.barcode || null,
+            naehrwerte: li.dataset.naehrwerte ? JSON.parse(li.dataset.naehrwerte) : null
+        };
+    });
+}
+
 
 // ============================================================
 // LOAD RECIPE INTO DETAIL VIEW
@@ -514,130 +675,130 @@ function loadRecipe(recipe) {
     currentRecipe = JSON.parse(JSON.stringify(recipe));
     basePortion = recipe.portionen;
     currentPortion = recipe.portionen;
-    isEditMode = false;
-    mdShowingEditor = false;
 
     document.getElementById('rv-titel').textContent = recipe.titel;
     document.getElementById('rv-kurzbeschreibung').textContent = recipe.kurzbeschreibung;
     document.getElementById('rv-kalorien').textContent = recipe.kalorien;
-    document.getElementById('rv-kosten').textContent = recipe.kosten.toFixed(2) + ' €';
-    document.getElementById('rv-dauer').textContent = recipe.dauer + ' Min.';
+    document.getElementById('rv-kosten').textContent = recipe.kosten.toFixed(2);
+    document.getElementById('rv-dauer').textContent = recipe.dauer;
     document.getElementById('rv-portionen').textContent = currentPortion;
     applyNutriScore(recipe.nutriScore);
 
-    const nw = recipe.naehrwerte || {};
-    document.getElementById('nw-energy-kcal').textContent = nw['energy-kcal_100g'] !== undefined ? nw['energy-kcal_100g'] : '—';
-    document.getElementById('nw-fat').textContent         = nw['fat_100g'] !== undefined ? nw['fat_100g'] : '—';
-    document.getElementById('nw-saturated-fat').textContent = nw['saturated-fat_100g'] !== undefined ? nw['saturated-fat_100g'] : '—';
-    document.getElementById('nw-carbohydrates').textContent = nw['carbohydrates_100g'] !== undefined ? nw['carbohydrates_100g'] : '—';
-    document.getElementById('nw-sugars').textContent       = nw['sugars_100g'] !== undefined ? nw['sugars_100g'] : '—';
-    document.getElementById('nw-fiber').textContent        = nw['fiber_100g'] !== undefined ? nw['fiber_100g'] : '—';
-    document.getElementById('nw-proteins').textContent     = nw['proteins_100g'] !== undefined ? nw['proteins_100g'] : '—';
-    document.getElementById('nw-salt').textContent         = nw['salt_100g'] !== undefined ? nw['salt_100g'] : '—';
-
+    updateNutritionDisplay(recipe);
     renderIngredients(recipe.zutaten, currentPortion, basePortion);
+    renderPreparationEditor(recipe);
 
-    document.getElementById('md-editor').value = recipe.beschreibung;
-    document.getElementById('md-rendered').style.display = '';
-    document.getElementById('md-editor').style.display = 'none';
-    renderMarkdown(recipe.beschreibung);
-
-    setEditMode(false);
-}
-
-// ============================================================
-// PORTION SCALER
-// ============================================================
-function updatePortions(newPort) {
-    currentPortion = Math.max(1, newPort);
-    document.getElementById('rv-portionen').textContent = currentPortion;
-
-    document.querySelectorAll('.zutat-menge').forEach(el => {
-        const base = parseFloat(el.dataset.base);
-        const scaled = Math.round((base * currentPortion / basePortion) * 10) / 10;
-        el.textContent = scaled;
-    });
-}
-
-// ============================================================
-// EDIT MODE
-// ============================================================
-function setEditMode(on) {
-    if (isEditMode === on) return;
-    isEditMode = on;
-
-    const editableIds = ['rv-titel', 'rv-kurzbeschreibung', 'rv-kalorien', 'rv-kosten', 'rv-dauer'];
-    editableIds.forEach(id => {
+    // Event Listener für Always-Editable Felder
+    ['rv-titel', 'rv-kurzbeschreibung', 'rv-kalorien', 'rv-kosten', 'rv-dauer'].forEach(id => {
         const el = document.getElementById(id);
-        if (el) el.contentEditable = on ? 'true' : 'false';
+        el.addEventListener('input', () => triggerAutosave());
     });
-
-    document.querySelectorAll('.zutat-menge, .zutat-einheit, .zutat-name').forEach(el => {
-        el.contentEditable = on ? 'true' : 'false';
-    });
-
-    document.querySelectorAll('.zutat-delete-btn').forEach(btn => {
-        btn.style.display = on ? 'flex' : 'none';
-    });
-
-    document.getElementById('btn-search-ingredient').style.display = on ? 'inline-flex' : 'none';
-    document.getElementById('btn-md-toggle').style.display = on ? 'flex' : 'none';
-
-    // Nutri-Score ist nicht mehr direkt editierbar, sondern wird gewichtet berechnet
-    const nutriEl = document.getElementById('rv-nutriscore');
-    if (nutriEl) nutriEl.style.cursor = 'default';
-
-    document.getElementById('btn-edit-recipe').style.display = on ? 'none' : 'inline-flex';
-    document.getElementById('btn-save-recipe').style.display = on ? 'inline-flex' : 'none';
-
-    if (!on && currentRecipe) saveCurrentEdits();
 }
 
-function saveCurrentEdits() {
+
+// ============================================================
+// AUTOSAVE ENGINE (Debounced)
+// ============================================================
+function triggerAutosave() {
+    if (autosaveTimeout) clearTimeout(autosaveTimeout);
+    
+    // Lokales Update sofort (für UI Konsistenz)
+    syncAllToState();
+    
+    // Nach 5 Minuten an Firebase senden (Wunsch des Users)
+    // Für besseres Feedback nutzen wir 30s im Hintergrund, aber ich stelle hier 5 Min ein
+    autosaveTimeout = setTimeout(() => {
+        saveRecipeToFirebase(currentRecipe);
+    }, 5 * 60 * 1000); 
+}
+
+function syncAllToState() {
+    if (!currentRecipe) return;
     currentRecipe.titel = document.getElementById('rv-titel').textContent.trim();
     currentRecipe.kurzbeschreibung = document.getElementById('rv-kurzbeschreibung').textContent.trim();
-    currentRecipe.kalorien = parseFloat(document.getElementById('rv-kalorien').textContent) || currentRecipe.kalorien;
-    currentRecipe.dauer = parseInt(document.getElementById('rv-dauer').textContent) || currentRecipe.dauer;
-    currentRecipe.kosten = parseFloat(document.getElementById('rv-kosten').textContent.replace(' €', '')) || currentRecipe.kosten;
+    currentRecipe.kalorien = parseFloat(document.getElementById('rv-kalorien').textContent) || 0;
+    currentRecipe.dauer = parseInt(document.getElementById('rv-dauer').textContent) || 0;
+    currentRecipe.kosten = parseFloat(document.getElementById('rv-kosten').textContent) || 0;
     
-    // Portionen
-    currentRecipe.portionen = parseInt(document.getElementById('rv-portionen').textContent) || currentRecipe.portionen;
-
-    const items = document.querySelectorAll('.zutat-item');
-    currentRecipe.zutaten = Array.from(items).map(li => {
-        const quantity = parseFloat(li.querySelector('.zutat-menge')?.textContent) || 0;
-        
-        // Lese die Zutatendaten
-        const z = {
-            menge: quantity,
-            einheit: li.querySelector('.zutat-einheit')?.textContent.trim() || '',
-            name: li.querySelector('.zutat-name')?.textContent.trim().replace('🏷️', '').trim()
-        };
-        
-        // Restore meta info if available on LI element
-        if (li.dataset.barcode) z.barcode = li.dataset.barcode;
-        if (li.dataset.naehrwerte) z.naehrwerte = JSON.parse(li.dataset.naehrwerte);
-        if (li.dataset.nutriscore) z.nutriScoreValue = parseFloat(li.dataset.nutriscore);
-        
-        return z;
-    });
-
-    if (mdShowingEditor) {
-        currentRecipe.beschreibung = document.getElementById('md-editor').value;
-        switchToRendered();
-    } else {
-        currentRecipe.beschreibung = document.getElementById('md-editor').value;
-    }
-
-    // Berechne Nährwerte automatisch neu
+    syncIngredientsFromDOM();
+    syncPreparationToMarkdown();
+    
+    // Nährwerte neu kalkulieren
     recalculateRecipeNutrition(currentRecipe);
-
-    // Speicher lokal im RAM und sende an Firebase
-    saveRecipeToFirebase(currentRecipe);
-
-    // Detail-Rerendering um neue Werte anzuzeigen
-    loadRecipe(currentRecipe);
+    updateNutritionDisplay(currentRecipe);
 }
+
+// ============================================================
+// PORTION SETTINGS MODAL
+// ============================================================
+function openPortionModal() {
+    document.getElementById('manual-portion-input').value = currentRecipe.portionen;
+    document.getElementById('portion-settings-modal').style.display = 'flex';
+}
+
+function closePortionModal() {
+    document.getElementById('portion-settings-modal').style.display = 'none';
+}
+
+function saveManualPortions() {
+    const newVal = parseInt(document.getElementById('manual-portion-input').value) || 1;
+    currentRecipe.portionen = newVal;
+    basePortion = newVal;
+    currentPortion = newVal;
+    document.getElementById('rv-portionen').textContent = currentPortion;
+    
+    updateNutritionDisplay(currentRecipe);
+    renderIngredients(currentRecipe.zutaten, currentPortion, basePortion);
+    
+    closePortionModal();
+    saveRecipeToFirebase(currentRecipe);
+}
+
+// ============================================================
+// INGREDIENT DETAIL MODAL
+// ============================================================
+function openIngredientModal(index) {
+    selectedIngredientIndex = index;
+    const z = currentRecipe.zutaten[index];
+    document.getElementById('modal-ingredient-name').textContent = z.name;
+    document.getElementById('modal-ingredient-barcode').textContent = z.barcode || 'Kein Barcode';
+    
+    const nw = z.naehrwerte || {};
+    document.getElementById('mi-kcal').value = nw['energy-kcal_100g'] || 0;
+    document.getElementById('mi-proteins').value = nw['proteins_100g'] || 0;
+    document.getElementById('mi-fat').value = nw['fat_100g'] || 0;
+    document.getElementById('mi-carbs').value = nw['carbohydrates_100g'] || 0;
+    
+    document.getElementById('ingredient-detail-modal').style.display = 'flex';
+}
+
+function closeIngredientModal() {
+    document.getElementById('ingredient-detail-modal').style.display = 'none';
+}
+
+function saveIngredientDetail() {
+    if (selectedIngredientIndex < 0) return;
+    const z = currentRecipe.zutaten[selectedIngredientIndex];
+    if (!z.naehrwerte) z.naehrwerte = {};
+    
+    z.naehrwerte['energy-kcal_100g'] = parseFloat(document.getElementById('mi-kcal').value) || 0;
+    z.naehrwerte['proteins_100g'] = parseFloat(document.getElementById('mi-proteins').value) || 0;
+    z.naehrwerte['fat_100g'] = parseFloat(document.getElementById('mi-fat').value) || 0;
+    z.naehrwerte['carbohydrates_100g'] = parseFloat(document.getElementById('mi-carbs').value) || 0;
+    
+    closeIngredientModal();
+    recalculateRecipeNutrition(currentRecipe);
+    updateNutritionDisplay(currentRecipe);
+    renderIngredients(currentRecipe.zutaten, currentPortion, basePortion);
+    triggerAutosave();
+}
+
+function deleteIngredient(index) {
+    currentRecipe.zutaten.splice(index, 1);
+    renderIngredients(currentRecipe.zutaten, currentPortion, basePortion);
+    triggerAutosave();
+}
+
 
 // ============================================================
 // MARKDOWN TOGGLE
@@ -668,26 +829,26 @@ function switchToRendered() {
 // ADD INGREDIENT (Manuell)
 // ============================================================
 function addIngredient() {
-    const list = document.getElementById('zutaten-list');
-    const li = document.createElement('li');
-    li.className = 'zutat-item';
-    li.innerHTML = `
-        <span class="zutat-drag-handle"><i data-feather="menu"></i></span>
-        <span class="zutat-menge" contenteditable="true" data-base="0">0</span>
-        <span class="zutat-einheit" contenteditable="true">g</span>
-        <span class="zutat-name" contenteditable="true">Neue Zutat</span>
-        <button class="zutat-delete-btn" title="Zutat entfernen" style="display:flex;"><i data-feather="x"></i></button>
-    `;
-    list.appendChild(li);
-    if (typeof feather !== 'undefined') feather.replace();
-
-    const nameEl = li.querySelector('.zutat-name');
-    nameEl.focus();
-    const range = document.createRange();
-    range.selectNodeContents(nameEl);
-    window.getSelection().removeAllRanges();
-    window.getSelection().addRange(range);
+    currentRecipe.zutaten.push({
+        menge: 0,
+        einheit: 'g',
+        name: ''
+    });
+    renderIngredients(currentRecipe.zutaten, currentPortion, basePortion);
+    
+    // Focus auf die neue Zutat (Name Feld)
+    setTimeout(() => {
+        const items = document.querySelectorAll('.zutaten-list .zutat-item');
+        const lastItem = items[items.length - 1];
+        const nameField = lastItem.querySelector('.zutat-name');
+        if (nameField) {
+            nameField.focus();
+        }
+    }, 50);
+    triggerAutosave();
 }
+
+
 
 // ============================================================
 // CAMERA BARCODE SCANNER LOGIC (html5-qrcode)
@@ -806,11 +967,6 @@ function addIngredientFromData(cleanBarcode, data) {
 
     showToast('Hinzugefügt!', displayName);
 
-    const list = document.getElementById('zutaten-list');
-    const li = document.createElement('li');
-    li.className = 'zutat-item';
-    li.dataset.barcode = cleanBarcode;
-
     const naehrwerte = {
         'energy-kcal_100g':   parseFloat(data['energy-kcal_100g'])   || 0,
         'fat_100g':           parseFloat(data['fat_100g'])           || 0,
@@ -821,21 +977,20 @@ function addIngredientFromData(cleanBarcode, data) {
         'proteins_100g':      parseFloat(data['proteins_100g'])      || 0,
         'salt_100g':          parseFloat(data['salt_100g'])          || 0
     };
-    li.dataset.naehrwerte = JSON.stringify(naehrwerte);
-    if (data.nutriscore_score != null) li.dataset.nutriscore = data.nutriscore_score;
 
-    const barcodeBadge = `<span class="barcode-badge-mini" style="font-size:0.8rem;margin-left:6px;cursor:help;" title="Barcode: ${cleanBarcode}">🏷️</span>`;
-    li.innerHTML = `
-        <span class="zutat-drag-handle"><i data-feather="menu"></i></span>
-        <span class="zutat-menge" contenteditable="true" data-base="100">100</span>
-        <span class="zutat-einheit" contenteditable="true">g</span>
-        <span class="zutat-name" contenteditable="true">${displayName}${barcodeBadge}</span>
-        <button class="zutat-delete-btn" title="Zutat entfernen" style="display:flex;"><i data-feather="x"></i></button>
-    `;
-    list.appendChild(li);
-    if (typeof feather !== 'undefined') feather.replace();
-    // Modal und Kamera bleiben offen — nächstes Produkt scannen!
+    currentRecipe.zutaten.push({
+        menge: 100,
+        einheit: 'g',
+        name: title,
+        barcode: cleanBarcode,
+        naehrwerte: naehrwerte,
+        nutriScoreValue: data.nutriScoreValue || null
+    });
+
+    renderIngredients(currentRecipe.zutaten, currentPortion, basePortion);
+    triggerAutosave();
 }
+
 
 // ============================================================
 // PRODUKTNAME-SUCHE (Ingredient Search mit Dropdown)
@@ -1147,147 +1302,157 @@ function showRecipeView(recipe) {
 document.addEventListener('DOMContentLoaded', () => {
     if (typeof feather !== 'undefined') feather.replace();
 
-    // Firebase Rezepte mit SWR-Verfahren laden
     loadRecipesFromFirebase();
 
-    // Hub-Schaltflächen
-    document.getElementById('btn-scan')?.addEventListener('click', () => {
-        alert('Kassenzettel scannen steht erst in der Pro-Version zur Verfügung.');
+    // Hub-Navigation
+    document.getElementById('btn-scan')?.addEventListener('click', () => alert('Kassenzettel scannen steht erst in der Pro-Version zur Verfügung.'));
+    document.getElementById('btn-new-recipe')?.addEventListener('click', createNewRecipe);
+    
+    document.getElementById('box-recipes')?.addEventListener('click', (e) => {
+        if (!e.target.closest('#recipe-search') && !e.target.closest('#search-results')) showView('recipes-view');
     });
-
-    // Neues Rezept anlegen
-    document.getElementById('btn-new-recipe')?.addEventListener('click', () => {
-        const newRecipe = {
-            id: 'new-' + Date.now(),
-            titel: 'Neues Rezept',
-            kurzbeschreibung: 'Gib eine kurze Beschreibung ein…',
-            schaerfe: 0,
-            kalorien: 0,
-            kosten: 0.00,
-            dauer: 20,
-            nutriScore: 'C',
-            portionen: 2,
-            naehrwerte: {
-                'energy-kcal_100g': 0,
-                'fat_100g': 0,
-                'saturated-fat_100g': 0,
-                'carbohydrates_100g': 0,
-                'sugars_100g': 0,
-                'fiber_100g': 0,
-                'proteins_100g': 0,
-                'salt_100g': 0
-            },
-            zutaten: [],
-            beschreibung: '## Zubereitung\n\n- [ ] Erster Zubereitungsschritt\n'
-        };
-        
-        saveRecipeToFirebase(newRecipe);
-        showRecipeView(newRecipe);
-        setTimeout(() => setEditMode(true), 50);
-    });
-
-    // Navigation Meine Rezepte Box -> Übersichtseite
-    const boxRecipes = document.getElementById('box-recipes');
-    if (boxRecipes) {
-        boxRecipes.style.cursor = 'pointer';
-        boxRecipes.addEventListener('click', (e) => {
-            if (!e.target.closest('#recipe-search') && !e.target.closest('#search-results')) {
-                showView('recipes-view');
-            }
-        });
-    }
 
     document.getElementById('btn-back-home')?.addEventListener('click', () => showView('main-view'));
+    document.getElementById('btn-back-from-recipe')?.addEventListener('click', () => showView('recipes-view'));
 
-    // Rezept-Zurück-Button
-    document.getElementById('btn-back-from-recipe')?.addEventListener('click', () => {
-        if (isEditMode) setEditMode(false);
-        showView('recipes-view');
+    // Rezept-Detail Actions
+    document.getElementById('btn-portion-settings')?.addEventListener('click', openPortionModal);
+    document.getElementById('btn-close-portion-modal')?.addEventListener('click', closePortionModal);
+    document.getElementById('btn-save-portions')?.addEventListener('click', saveManualPortions);
+    
+    document.getElementById('btn-close-ingredient-modal')?.addEventListener('click', closeIngredientModal);
+    document.getElementById('btn-save-ingredient-detail')?.addEventListener('click', saveIngredientDetail);
+    document.getElementById('btn-delete-ingredient-detail')?.addEventListener('click', () => {
+        deleteIngredient(selectedIngredientIndex);
+        closeIngredientModal();
     });
 
-    // Editieren und Speichern
-    document.getElementById('btn-edit-recipe')?.addEventListener('click', () => setEditMode(true));
-    document.getElementById('btn-save-recipe')?.addEventListener('click', () => setEditMode(false));
+    // Preparation Editor
+    document.getElementById('btn-add-step')?.addEventListener('click', addPrepStep);
+    document.getElementById('btn-add-section')?.addEventListener('click', addPrepSection);
 
-    // Markdown Editor Umschalter
-    document.getElementById('btn-md-toggle')?.addEventListener('click', () => {
-        if (mdShowingEditor) switchToRendered();
-        else switchToEditor();
+    // Ingredient Actions (New)
+    document.getElementById('btn-add-ingredient-manual')?.addEventListener('click', addIngredient);
+    
+    // Ingredient Search & Barcode
+    setupInlineIngredientSearch();
+    document.getElementById('btn-barcode-inline')?.addEventListener('click', () => {
+        document.getElementById('barcode-modal').style.display = 'flex';
+        startCameraScanner();
+        setupIngredientSearch(); // Suche im Scanner-Modal
     });
 
-    // Portions-Zähler Stepper
+
+    document.getElementById('btn-close-barcode-modal')?.addEventListener('click', () => {
+        document.getElementById('barcode-modal').style.display = 'none';
+        stopCameraScanner();
+    });
+
+    // Stepper
     document.getElementById('btn-portion-up')?.addEventListener('click', () => updatePortions(currentPortion + 1));
     document.getElementById('btn-portion-down')?.addEventListener('click', () => updatePortions(currentPortion - 1));
-
-    // Barcode Button → Modal öffnen & Kamera sofort starten
-    const btnBarcode = document.getElementById('btn-barcode');
-    const barcodeModal = document.getElementById('barcode-modal');
-    const btnCloseBarcodeModal = document.getElementById('btn-close-barcode-modal');
-
-    if (btnBarcode && barcodeModal) {
-        btnBarcode.addEventListener('click', () => {
-            if (!isEditMode) {
-                showToast('Hinweis', 'Zuerst Rezept bearbeiten, um Zutaten hinzuzufügen.', true);
-                return;
-            }
-            document.getElementById('barcode-loading-spinner').style.display = 'none';
-            barcodeModal.style.display = 'flex';
-            // Kamera + Suche starten
-            startCameraScanner();
-            setupIngredientSearch();
-        });
-    }
-
-    // Modal schließen → Kamera stoppen
-    if (btnCloseBarcodeModal) {
-        btnCloseBarcodeModal.addEventListener('click', () => {
-            barcodeModal.style.display = 'none';
-            stopCameraScanner();
-        });
-    }
-    if (barcodeModal) {
-        barcodeModal.addEventListener('click', (e) => {
-            if (e.target === barcodeModal) {
-                barcodeModal.style.display = 'none';
-                stopCameraScanner();
-            }
-        });
-    }
-
-    // Sonstige statische Klicks
+    
     document.getElementById('btn-bring')?.addEventListener('click', () => alert('🛒 Wird zur Bring!-Liste hinzugefügt…'));
+});
 
-    // Zutat entfernen Delegation
-    document.getElementById('zutaten-list')?.addEventListener('click', (e) => {
-        const btn = e.target.closest('.zutat-delete-btn');
-        if (btn) btn.closest('.zutat-item').remove();
+function createNewRecipe() {
+    const newRecipe = {
+        id: 'new-' + Date.now(),
+        titel: 'Neues Rezept',
+        kurzbeschreibung: 'Gib eine kurze Beschreibung ein…',
+        kalorien: 0,
+        kosten: 0.00,
+        dauer: 20,
+        nutriScore: 'C',
+        portionen: 2,
+        naehrwerte: {
+            'energy-kcal_100g': 0,
+            'fat_100g': 0,
+            'saturated-fat_100g': 0,
+            'carbohydrates_100g': 0,
+            'sugars_100g': 0,
+            'fiber_100g': 0,
+            'proteins_100g': 0,
+            'salt_100g': 0
+        },
+        zutaten: [],
+        beschreibung: '## Zubereitung\n\n- [ ] Erster Zubereitungsschritt\n'
+    };
+    saveRecipeToFirebase(newRecipe);
+    showRecipeView(newRecipe);
+}
+
+function updatePortions(newPort) {
+    currentPortion = Math.max(1, newPort);
+    document.getElementById('rv-portionen').textContent = currentPortion;
+    renderIngredients(currentRecipe.zutaten, currentPortion, basePortion);
+    updateNutritionDisplay(currentRecipe); // Nährwerte skalieren automatisch im Display
+}
+
+function setupInlineIngredientSearch() {
+    const input = document.getElementById('inline-ingredient-search');
+    const resultsEl = document.getElementById('inline-search-results');
+    if (!input || !resultsEl) return;
+
+    const doSearch = debounce(async (query) => {
+        if (query.length < 2) { resultsEl.style.display = 'none'; return; }
+        
+        const cacheKey = query.toLowerCase();
+        if (ingredientSearchCache[cacheKey]) {
+            renderInlineResults(ingredientSearchCache[cacheKey], resultsEl);
+            return;
+        }
+
+        try {
+            const q = query.toLowerCase().replace(/[.#$[\]/]/g, '_');
+            const end = q + '\uf8ff';
+            const url = `${FIREBASE_URL}/name_index.json?orderBy="%24key"&startAt=${encodeURIComponent(JSON.stringify(q))}&endAt=${encodeURIComponent(JSON.stringify(end))}&limitToFirst=8`;
+            const res = await fetch(url);
+            const data = await res.json();
+            const items = data ? Object.values(data) : [];
+            ingredientSearchCache[cacheKey] = items;
+            renderInlineResults(items, resultsEl);
+        } catch (err) { console.error(err); }
+    }, 250);
+
+    input.addEventListener('input', (e) => doSearch(e.target.value.trim()));
+    document.addEventListener('click', (e) => { if (!input.contains(e.target)) resultsEl.style.display = 'none'; });
+}
+
+function renderInlineResults(items, resultsEl) {
+    resultsEl.innerHTML = '';
+    
+    // Bestehende Treffer anzeigen
+    items.forEach(item => {
+        const div = document.createElement('div');
+        div.className = 'ingredient-dropdown-item';
+        div.innerHTML = `<span class="ingredient-dropdown-name">${item.product_name || '?'}</span> <span class="ingredient-dropdown-brand">${item.brands || ''}</span>`;
+        div.addEventListener('click', () => {
+            resultsEl.style.display = 'none';
+            document.getElementById('inline-ingredient-search').value = '';
+            addIngredientFromData(item.barcode, item);
+        });
+        resultsEl.appendChild(div);
     });
 
-    // ── Produkt-Textsuche Modal ──────────────────────────────
-    const searchModal    = document.getElementById('search-modal');
-    const btnSearchIngr  = document.getElementById('btn-search-ingredient');
-    const btnCloseSearch = document.getElementById('btn-close-search-modal');
+    // Immer die Option "Manuell hinzufügen" am Ende anzeigen
+    const manualDiv = document.createElement('div');
+    manualDiv.className = 'ingredient-dropdown-item manual-add-option';
+    manualDiv.style.borderTop = '1px solid #f1f5f9';
+    manualDiv.style.color = 'var(--accent-blue)';
+    manualDiv.style.fontWeight = '700';
+    manualDiv.innerHTML = `<i data-feather="plus-circle" style="width:14px;height:14px;margin-right:6px;vertical-align:middle;"></i> Manuell hinzufügen`;
+    manualDiv.addEventListener('click', () => {
+        resultsEl.style.display = 'none';
+        document.getElementById('inline-ingredient-search').value = '';
+        addIngredient();
+    });
+    resultsEl.appendChild(manualDiv);
+    
+    if (typeof feather !== 'undefined') feather.replace();
+    resultsEl.style.display = 'block';
+}
 
-    if (btnSearchIngr && searchModal) {
-        btnSearchIngr.addEventListener('click', () => {
-            if (!isEditMode) return;
-            searchModal.style.display = 'flex';
-            const inp = document.getElementById('standalone-search-input');
-            if (inp) { inp.value = ''; inp.focus(); }
-            document.getElementById('standalone-search-results').style.display = 'none';
-            document.getElementById('search-modal-spinner').style.display = 'none';
-            setupStandaloneSearch();
-        });
-    }
-    if (btnCloseSearch && searchModal) {
-        btnCloseSearch.addEventListener('click', () => { searchModal.style.display = 'none'; });
-    }
-    if (searchModal) {
-        searchModal.addEventListener('click', (e) => {
-            if (e.target === searchModal) searchModal.style.display = 'none';
-        });
-    }
-});
 
 // ============================================================
 // STANDALONE PRODUKT-TEXTSUCHE (/name_index, $key-Ordering)

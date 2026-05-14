@@ -119,12 +119,7 @@
                 <i data-feather="arrow-left"></i> Zurück
             </button>
             <div class="recipe-view-actions">
-                <button class="action-btn btn-edit" id="btn-edit-recipe">
-                    <i data-feather="edit-2"></i> Bearbeiten
-                </button>
-                <button class="action-btn btn-save" id="btn-save-recipe" style="display:none;">
-                    <i data-feather="save"></i> Speichern
-                </button>
+                <!-- Keine manuellen Edit/Save Buttons mehr -->
             </div>
         </header>
 
@@ -134,9 +129,9 @@
 
                 <!-- Titel & Kurzbeschreibung -->
                 <div class="bento-box recipe-info-box">
-                    <h1 class="recipe-title" id="rv-titel" contenteditable="false" data-field="titel">Rezepttitel</h1>
-                    <p class="recipe-short-desc" id="rv-kurzbeschreibung" contenteditable="false"
-                        data-field="kurzbeschreibung">Kurze Beschreibung des Rezepts…</p>
+                    <h1 class="recipe-title" id="rv-titel" contenteditable="true" data-field="titel" data-placeholder="Rezepttitel eingeben..."></h1>
+                    <p class="recipe-short-desc" id="rv-kurzbeschreibung" contenteditable="true"
+                        data-field="kurzbeschreibung" data-placeholder="Kurze Beschreibung des Rezepts…"></p>
                 </div>
 
                 <!-- Key-Property-Badges -->
@@ -145,20 +140,20 @@
                     <div class="bento-box key-prop-badge" id="badge-kalorien">
                         <span class="badge-icon">🔥</span>
                         <span class="badge-label">kcal / Portion</span>
-                        <span class="badge-value" id="rv-kalorien" contenteditable="false"
-                            data-field="kalorien">—</span>
+                        <span class="badge-value" id="rv-kalorien" contenteditable="true"
+                            data-field="kalorien">0</span>
                     </div>
                     <!-- Kosten -->
                     <div class="bento-box key-prop-badge" id="badge-kosten">
                         <span class="badge-icon">💶</span>
                         <span class="badge-label">Kosten / Portion</span>
-                        <span class="badge-value" id="rv-kosten" contenteditable="false" data-field="kosten">—</span>
+                        <span class="badge-value" id="rv-kosten" contenteditable="true" data-field="kosten">0.00</span>
                     </div>
                     <!-- Dauer -->
                     <div class="bento-box key-prop-badge" id="badge-dauer">
                         <span class="badge-icon">⏱</span>
                         <span class="badge-label">Dauer</span>
-                        <span class="badge-value" id="rv-dauer" contenteditable="false" data-field="dauer">—</span>
+                        <span class="badge-value" id="rv-dauer" contenteditable="true" data-field="dauer">0</span>
                     </div>
                     <!-- Nutri-Score (typische Balken-Darstellung) -->
                     <div class="bento-box key-prop-badge nutri-badge" id="badge-nutri">
@@ -178,7 +173,10 @@
 
                     <!-- Nährwerte -->
                     <div class="bento-box naehrwerte-box">
-                        <h3 class="sub-box-title"><i data-feather="activity"></i> Nährwerte</h3>
+                        <div class="box-settings-gear" id="btn-portion-settings" title="Portionen anpassen">
+                            <i data-feather="settings"></i>
+                        </div>
+                        <h3 class="sub-box-title"><i data-feather="activity"></i> NÄHRWERTE / PORTION</h3>
                         <div class="naehrwert-row">
                             <span class="naehrwert-label">Energie</span>
                             <span class="naehrwert-value" id="nw-energy-kcal">—</span>
@@ -229,35 +227,40 @@
                             </button>
                             <div class="portion-stepper">
                                 <button class="stepper-btn" id="btn-portion-down"><i data-feather="minus"></i></button>
-                                <span class="portion-display"><span id="rv-portionen">2</span> Port.</span>
+                                <span class="portion-display"><span id="rv-portionen">2</span></span>
                                 <button class="stepper-btn" id="btn-portion-up"><i data-feather="plus"></i></button>
                             </div>
                         </div>
                         <h3 class="sub-box-title"><i data-feather="list"></i> Zutaten</h3>
+                        
                         <ul class="zutaten-list" id="zutaten-list">
                             <!-- Wird per JS befüllt -->
                         </ul>
-                        <!-- Aktions-Buttons unterhalb der Zutatenliste -->
+
                         <div class="zutaten-footer-btns">
-                            <button class="add-ingredient-btn" id="btn-search-ingredient" style="display:none;">
-                                <i data-feather="search"></i> Produkt suchen
-                            </button>
-                            <button class="barcode-scan-btn" id="btn-barcode" title="Barcode?">
-                                <svg class="barcode-icon" viewBox="0 0 40 28" fill="currentColor"
-                                    xmlns="http://www.w3.org/2000/svg">
-                                    <rect x="0" y="0" width="3" height="28" />
-                                    <rect x="5" y="0" width="1.5" height="28" />
-                                    <rect x="8" y="0" width="3" height="28" />
-                                    <rect x="13" y="0" width="1.5" height="28" />
-                                    <rect x="16" y="0" width="2" height="28" />
-                                    <rect x="20" y="0" width="3" height="28" />
-                                    <rect x="25" y="0" width="1.5" height="28" />
-                                    <rect x="28" y="0" width="3" height="28" />
-                                    <rect x="33" y="0" width="1.5" height="28" />
-                                    <rect x="36" y="0" width="4" height="28" />
-                                </svg>
-                                Barcode?
-                            </button>
+                            <div class="prep-actions">
+                                <!-- Suche im Design des manuellen Buttons -->
+                                <div class="search-input-wrapper dashed-search" id="inline-search-container">
+                                    <input type="text" id="inline-ingredient-search" placeholder="Zutat suchen & hinzufügen..." autocomplete="off">
+                                    <div id="inline-search-results" class="ingredient-dropdown" style="display: none;"></div>
+                                </div>
+                                
+                                <button class="add-section-btn" id="btn-barcode-inline" title="Barcode scannen">
+                                    <svg class="barcode-icon" viewBox="0 0 40 28" fill="currentColor"
+                                        xmlns="http://www.w3.org/2000/svg" style="width: 20px; height: 14px;">
+                                        <rect x="0" y="0" width="3" height="28" />
+                                        <rect x="5" y="0" width="1.5" height="28" />
+                                        <rect x="8" y="0" width="3" height="28" />
+                                        <rect x="13" y="0" width="1.5" height="28" />
+                                        <rect x="16" y="0" width="2" height="28" />
+                                        <rect x="20" y="0" width="3" height="28" />
+                                        <rect x="25" y="0" width="1.5" height="28" />
+                                        <rect x="28" y="0" width="3" height="28" />
+                                        <rect x="33" y="0" width="1.5" height="28" />
+                                        <rect x="36" y="0" width="4" height="28" />
+                                    </svg>
+                                </button>
+                            </div>
                         </div>
                     </div>
 
@@ -269,17 +272,17 @@
                 <div class="bento-box markdown-box">
                     <div class="markdown-box-header">
                         <h3 class="sub-box-title"><i data-feather="file-text"></i> Zubereitung</h3>
-                        <button class="md-toggle-btn" id="btn-md-toggle"
-                            title="Zwischen Bearbeiten und Vorschau wechseln" style="display:none;">
-                            <i data-feather="eye"></i>
-                        </button>
                     </div>
-                    <!-- Render-Ansicht -->
-                    <div class="markdown-content" id="md-rendered"></div>
-                    <!-- Edit-Ansicht -->
-                    <textarea class="markdown-editor" id="md-editor" style="display:none;" placeholder="Rezeptbeschreibung als Markdown eingeben...
-
-Tipp: - [ ] für abhakbare Schritte"></textarea>
+                    <!-- Immer editierbare Zubereitung -->
+                    <div class="preparation-editor-container">
+                        <div id="prep-steps-list" class="prep-steps-list">
+                            <!-- Dynamisch: Schritte und Abschnitte -->
+                        </div>
+                        <div class="prep-actions">
+                            <button class="add-step-btn" id="btn-add-step"><i data-feather="plus"></i> Schritt hinzufügen</button>
+                            <button class="add-section-btn" id="btn-add-section"><i data-feather="plus-square"></i> Abschnitt hinzufügen</button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </main>
@@ -336,6 +339,54 @@ Tipp: - [ ] für abhakbare Schritte"></textarea>
             <div id="search-modal-spinner" class="loading-spinner" style="display: none; margin-top: 14px;">
                 <div class="spinner"></div>
                 <span>Suche…</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Portionen-Einstellungen Modal -->
+    <div id="portion-settings-modal" class="modal-backdrop" style="display: none;">
+        <div class="modal-content" style="max-width: 320px;">
+            <button class="modal-close-btn" id="btn-close-portion-modal">&times;</button>
+            <h2 style="margin-bottom: 12px;">Portionen anpassen</h2>
+            <p class="modal-subtitle">Wieviele Portionen ergibt dieses Rezept standardmäßig?</p>
+            <div class="portion-input-row" style="margin-top: 20px;">
+                <input type="number" id="manual-portion-input" min="1" step="1" style="width: 80px; padding: 10px; border-radius: 12px; border: 1px solid #e2e8f0; font-size: 1.2rem; text-align: center;">
+                <span style="font-size: 1.1rem; font-weight: 500;">Portionen</span>
+            </div>
+            <button class="action-btn btn-save" id="btn-save-portions" style="width: 100%; margin-top: 24px; justify-content: center;">Übernehmen & Speichern</button>
+        </div>
+    </div>
+
+    <!-- Zutat-Details Modal -->
+    <div id="ingredient-detail-modal" class="modal-backdrop" style="display: none;">
+        <div class="modal-content" style="max-width: 440px;">
+            <button class="modal-close-btn" id="btn-close-ingredient-modal">&times;</button>
+            <h2 id="modal-ingredient-name">Zutat Details</h2>
+            <p class="modal-subtitle" id="modal-ingredient-barcode" style="font-family: monospace;"></p>
+            
+            <div class="modal-nutrition-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 20px;">
+                <!-- Nährwerte der Zutat pro 100g editierbar -->
+                <div class="modal-field">
+                    <label>kcal / 100g</label>
+                    <input type="number" id="mi-kcal" step="0.1">
+                </div>
+                <div class="modal-field">
+                    <label>Eiweiß / 100g</label>
+                    <input type="number" id="mi-proteins" step="0.1">
+                </div>
+                <div class="modal-field">
+                    <label>Fett / 100g</label>
+                    <input type="number" id="mi-fat" step="0.1">
+                </div>
+                <div class="modal-field">
+                    <label>Kohlenh. / 100g</label>
+                    <input type="number" id="mi-carbs" step="0.1">
+                </div>
+            </div>
+            
+            <div class="modal-actions" style="margin-top: 24px; display: flex; gap: 12px;">
+                <button class="action-btn btn-save" id="btn-save-ingredient-detail" style="flex: 1; justify-content: center;">Sichern</button>
+                <button class="action-btn btn-edit" id="btn-delete-ingredient-detail" style="flex: 1; justify-content: center; background: #fee2e2; color: #b91c1c; border-color: #fca5a5;">Löschen</button>
             </div>
         </div>
     </div>

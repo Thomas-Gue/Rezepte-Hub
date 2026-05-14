@@ -763,11 +763,30 @@ body {
     transition: background 0.2s;
 }
 
-/* Editable highlight */
+/* Editable highlight & Placeholder */
 [contenteditable="true"] {
-    background: rgba(29, 161, 242, 0.06);
-    box-shadow: 0 0 0 2px rgba(29, 161, 242, 0.25);
     cursor: text;
+    outline: none;
+    transition: background 0.2s, box-shadow 0.2s;
+}
+
+[contenteditable="true"]:hover {
+    background: rgba(29, 161, 242, 0.04);
+}
+
+[contenteditable="true"]:focus {
+    background: rgba(29, 161, 242, 0.08);
+    box-shadow: 0 0 0 2px rgba(29, 161, 242, 0.2);
+    border-radius: 4px;
+}
+
+[contenteditable="true"]:empty::before {
+    content: attr(data-placeholder);
+    color: var(--text-muted);
+    opacity: 0.4;
+    font-style: italic;
+    pointer-events: none;
+    display: block;
 }
 
 /* Key Props Grid (4 Badges nach Entfernung von Schärfe) */
@@ -889,8 +908,10 @@ body {
 /* Sub-Bento Grid: Nährwerte + Zutaten */
 .sub-bento-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 0.8fr 1.2fr;
     gap: var(--spacing-md);
+    align-items: start; /* Verhindert das Strecken auf gleiche Höhe */
+    overflow: visible;
 }
 
 @media (max-width: 480px) {
@@ -906,11 +927,38 @@ body {
     flex-direction: column;
     gap: 10px;
     padding: var(--spacing-md);
+    min-height: auto; /* Fixe Höhe entfernen */
+    overflow: visible;
+}
+
+.box-settings-gear {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-radius: 50%;
+    transition: background 0.2s, color 0.2s, transform 0.3s;
+}
+
+.box-settings-gear:hover {
+    background: rgba(0, 0, 0, 0.05);
+    color: var(--accent-blue);
+    transform: rotate(45deg);
+}
+
+.box-settings-gear i {
+    width: 18px;
+    height: 18px;
 }
 
 .naehrwerte-box:hover,
 .zutaten-box:hover {
-    transform: none;
     box-shadow: var(--shadow-sm);
 }
 
@@ -1058,7 +1106,7 @@ body {
     list-style: none;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
     padding: 0;
     flex: 1;
 }
@@ -1066,8 +1114,8 @@ body {
 .zutat-item {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 7px 8px;
+    gap: 6px;
+    padding: 4px 8px;
     border-radius: 10px;
     font-size: 0.875rem;
     transition: background 0.15s;
@@ -1610,6 +1658,196 @@ body {
 .toast-message {
     font-size: 0.8rem;
     color: var(--text-muted);
+}
+
+/* Preparation Editor */
+.preparation-editor-container {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+}
+
+.prep-steps-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* Step Item */
+.prep-step-item {
+    display: flex;
+    gap: 12px;
+    background: #f8fafc;
+    padding: 12px;
+    border-radius: 16px;
+    transition: background 0.2s;
+    position: relative;
+}
+
+.prep-step-item:hover {
+    background: #f1f5f9;
+}
+
+.step-number {
+    width: 24px;
+    height: 24px;
+    background: var(--accent-blue);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: 700;
+    flex-shrink: 0;
+    margin-top: 2px;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s;
+}
+
+.step-number:hover {
+    transform: scale(1.1);
+}
+
+.step-number:active {
+    transform: scale(0.9);
+}
+
+.prep-step-item.is-completed .step-number {
+    background: #10b981; /* Success Green */
+}
+
+.prep-step-item.is-completed .step-content {
+    text-decoration: line-through;
+    color: var(--text-muted);
+    opacity: 0.6;
+}
+
+.step-content {
+    flex: 1;
+    font-size: 0.95rem;
+    line-height: 1.5;
+}
+
+/* Section Item */
+.prep-section-item {
+    margin-top: 12px;
+    padding: 8px 0;
+}
+
+.section-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--accent-dark);
+    padding: 4px 8px;
+    border-left: 4px solid var(--accent-blue);
+    margin-left: -8px;
+}
+
+.prep-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 8px;
+}
+
+.zutaten-footer-btns {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #f1f5f9;
+}
+
+.prep-actions button {
+    flex: 1;
+    padding: 10px;
+    border-radius: 12px;
+    border: 1px dashed #cbd5e1;
+    background: white;
+    color: var(--text-muted);
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: all 0.2s;
+}
+
+#btn-barcode-inline {
+    flex: 0 0 44px; /* Fixe Breite für Icon-only */
+    height: 44px;
+    padding: 0;
+}
+
+/* Dashed Search Input Wrapper */
+.dashed-search {
+    flex: 1;
+    border: 1px dashed #cbd5e1;
+    background: white;
+    border-radius: 12px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    transition: border-color 0.2s, background 0.2s;
+    position: relative;
+    overflow: visible;
+}
+
+.dashed-search:focus-within {
+    border-color: var(--accent-blue);
+    background: rgba(29, 161, 242, 0.02);
+}
+
+.dashed-search input {
+    background: transparent;
+    border: none;
+    outline: none;
+    padding: 0;
+    margin-left: 0;
+    width: 100%;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-main);
+}
+
+.prep-actions button:hover {
+    border-color: var(--accent-blue);
+    color: var(--accent-blue);
+    background: rgba(29, 161, 242, 0.05);
+}
+
+.prep-actions button i {
+    width: 16px;
+    height: 16px;
+}
+
+/* Modal Fields */
+.modal-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.modal-field label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.modal-field input {
+    padding: 10px;
+    border-radius: 10px;
+    border: 1px solid #e2e8f0;
+    font-family: inherit;
+    font-weight: 600;
+    outline: none;
+}
+
+.modal-field input:focus {
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 2px rgba(29, 161, 242, 0.1);
 }
 
 /* Keyframes animations */
