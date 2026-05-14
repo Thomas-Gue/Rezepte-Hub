@@ -900,7 +900,12 @@ async function startCameraScanner() {
 
     try {
         cameraStream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'environment', advanced: [{ focusMode: 'continuous' }] }
+            video: { 
+                facingMode: 'environment', 
+                width: { ideal: 1920 },
+                height: { ideal: 1080 },
+                advanced: [{ focusMode: 'continuous' }] 
+            }
         });
         video.srcObject = cameraStream;
         
@@ -972,6 +977,12 @@ async function scanLoop() {
                 console.log('Barcode erkannt:', barcodeFound);
                 scanCooldown = true;
                 setTimeout(() => { scanCooldown = false; }, 2000);
+                
+                // Für Debugging: Barcode in das Suchfeld eintragen, damit der Nutzer sieht, was gelesen wurde
+                const searchInput = document.getElementById('ingredient-search-input');
+                if (searchInput) searchInput.value = barcodeFound;
+                showToast('Scan erfolgreich', `Code gelesen: ${barcodeFound}`, false);
+
                 // Kamera läuft weiter, Lookup wird asynchron gestartet
                 handleBarcodeLookup(barcodeFound);
             }
@@ -1009,12 +1020,6 @@ function stopCameraScanner() {
 async function handleBarcodeLookup(barcode) {
     let cleanBarcode = barcode.trim().replace(/[\.\#\$\[\]\/]/g, '_');
     if (!cleanBarcode) return;
-
-    // OpenFoodFacts nutzt das 13-stellige GTIN-Format. 
-    // Wenn ein Barcode 8 oder 12 Stellen hat (EAN-8 oder UPC-A), wird er mit führenden Nullen aufgefüllt.
-    if (cleanBarcode.match(/^\d+$/) && cleanBarcode.length < 13) {
-        cleanBarcode = cleanBarcode.padStart(13, '0');
-    }
 
     // 1. Cache-Treffer? → sofortige Antwort (0ms Latenz)
     if (productCache[cleanBarcode] !== undefined) {
