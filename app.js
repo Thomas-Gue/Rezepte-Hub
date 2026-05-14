@@ -904,15 +904,14 @@ async function startCameraScanner() {
         // Liste alle Video-Eingabegeräte auf, falls wir das noch nicht getan haben
         if (videoDevices.length === 0) {
             const allDevices = await navigator.mediaDevices.enumerateDevices();
-            // Filtere Rückkameras heraus (oder alle, falls keine klaren Labels vorhanden)
-            let backCameras = allDevices.filter(device => device.kind === 'videoinput' && 
-                (device.label.toLowerCase().includes('back') || 
-                 device.label.toLowerCase().includes('rear') || 
-                 device.label.includes('0') || 
-                 device.label.includes('1') || 
-                 !device.label.toLowerCase().includes('front')));
+            // Filtere alle Kameras heraus, die explizit 'front' im Namen tragen
+            let backCameras = allDevices.filter(device => {
+                if (device.kind !== 'videoinput') return false;
+                if (device.label.toLowerCase().includes('front')) return false;
+                return true;
+            });
             
-            // Fallback, falls der Filter alles aussortiert
+            // Fallback, falls der Filter alles aussortiert (z.B. wenn keine Labels verfügbar sind)
             if (backCameras.length === 0) {
                 backCameras = allDevices.filter(device => device.kind === 'videoinput');
             }
@@ -1012,7 +1011,6 @@ async function scanLoop() {
                 // Für Debugging: Barcode in das Suchfeld eintragen, damit der Nutzer sieht, was gelesen wurde
                 const searchInput = document.getElementById('ingredient-search-input');
                 if (searchInput) searchInput.value = barcodeFound;
-                showToast('Scan erfolgreich', `Code gelesen: ${barcodeFound}`, false);
 
                 // Kamera läuft weiter, Lookup wird asynchron gestartet
                 handleBarcodeLookup(barcodeFound);
