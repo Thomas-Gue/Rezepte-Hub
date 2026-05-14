@@ -864,44 +864,55 @@ function addIngredient() {
 
 
 // ============================================================
-// CAMERA BARCODE SCANNER LOGIC (html5-qrcode)
+// CAMERA BARCODE SCANNER LOGIC (Hybrid: Native + zxing-wasm)
 // ============================================================
-function startCameraScanner() {
-    const viewport = document.getElementById('camera-viewport');
-    const scannerLine = document.getElementById('scanner-line');
-    if (!viewport) return;
+let cameraStream = null;
+let scannerLoopId = null;
+let nativeBarcodeDetector = null;
 
-    // Bereinige etwaige Überreste eines vorherigen Scans (verhindert den Initialisierungsfehler!)
-    if (html5Qrcode) {
-        try { html5Qrcode.clear(); } catch(e) { /* ignorieren */ }
-        html5Qrcode = null;
+
+if ('BarcodeDetector' in window) {
+    try {
+        nativeBarcodeDetector = new BarcodeDetector({ formats: ['ean_13', 'ean_8'] });
+    } catch (e) {
+        console.warn('Native BarcodeDetector nicht verfügbar, nutze Fallback.', e);
     }
-    viewport.innerHTML = '';
-    if (scannerLine) viewport.appendChild(scannerLine);
+}
 
-    // Erstelle eine frische Instanz
-    html5Qrcode = new Html5Qrcode('camera-viewport');
+async function startCameraScanner() {
+    const video = document.getElementById('barcode-video');
+    const scannerLine = document.getElementById('scanner-line');
+    if (!video) return;
 
-    const onSuccess = (decodedText) => {
-        // Cooldown: gleicher Barcode-Frame wird nicht 10x hintereinander gefeuert
-        if (scanCooldown) return;
-        scanCooldown = true;
-        setTimeout(() => { scanCooldown = false; }, 1500);
+    // Dynamischer Import von zxing-wasm (nur wenn benötigt und nicht schon geladen)
+    if (!nativeBarcodeDetector && !window.zxingReadBarcodes) {
+        import("https://cdn.jsdelivr.net/npm/zxing-wasm@3.3.1/dist/reader/index.js")
+            .then(module => {
+                window.zxingReadBarcodes = module.readBarcodesFromImageData;
+                console.log("zxing-wasm erfolgreich geladen");
+            })
+            .catch(err => console.error("Fehler beim Laden von zxing-wasm:", err));
+    }
 
-        console.log('Barcode erkannt:', decodedText);
-        // Kamera läuft WEITER — nur Lookup starten
-        handleBarcodeLookup(decodedText);
-    };
+    try {
+        cameraStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment', advanced: [{ focusMode: 'continuous' }] }
+        });
+        video.srcObject = cameraStream;
+        
+        // Warten bis Metadaten geladen sind um das Video abzuspielen
+        await new Promise(resolve => {
+            video.onloadedmetadata = () => {
+                resolve();
+            };
+        });
+        
+        await video.play();
 
-    html5Qrcode.start(
-        { facingMode: 'environment' },
-        { fps: 10, qrbox: { width: 240, height: 100 } },
-        onSuccess,
-        () => {} // Frame-Fehler geräuschlos ignorieren
-    ).then(() => {
-        // Scanner läuft — animierte Scan-Linie zeigen
         if (scannerLine) scannerLine.style.display = 'block';
-    }).catch(err => {
+
+        scanLoop();
+    } catch (err) {
         console.error('Kamera-Zugriffsfehler:', err);
         const errMsg = err && err.message ? err.message : String(err);
         if (errMsg.includes('Permission') || errMsg.includes('NotAllowed')) {
@@ -910,19 +921,80 @@ function startCameraScanner() {
             showToast('Kamerafehler', 'Kamera konnte nicht gestartet werden.', true);
         }
         stopCameraScanner();
-    });
+    }
+}
+
+async function scanLoop() {
+    if (!cameraStream) return;
+    
+    if (scanCooldown) {
+        scannerLoopId = requestAnimationFrame(scanLoop);
+        return;
+    }
+
+    const video = document.getElementById('barcode-video');
+    const canvas = document.getElementById('barcode-canvas');
+
+    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+        try {
+            let barcodeFound = null;
+
+            if (nativeBarcodeDetector) {
+                // Priorität 1: Native Hardware-Beschleunigung
+                const barcodes = await nativeBarcodeDetector.detect(video);
+                if (barcodes.length > 0) {
+                    barcodeFound = barcodes[0].rawValue;
+                }
+            } else if (window.zxingReadBarcodes) {
+                // Priorität 2: zxing-wasm Fallback (iPad/Safari)
+                const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                
+                const results = await window.zxingReadBarcodes(imageData, {
+                    tryHarder: true,
+                    formats: ['EAN_13', 'EAN_8']
+                });
+                
+                if (results && results.length > 0) {
+                    barcodeFound = results[0].text;
+                }
+            }
+
+            if (barcodeFound) {
+                console.log('Barcode erkannt:', barcodeFound);
+                scanCooldown = true;
+                setTimeout(() => { scanCooldown = false; }, 2000);
+                // Kamera läuft weiter, Lookup wird asynchron gestartet
+                handleBarcodeLookup(barcodeFound);
+            }
+        } catch (err) {
+            // Frame-Fehler ignorieren
+        }
+    }
+
+    scannerLoopId = requestAnimationFrame(scanLoop);
 }
 
 function stopCameraScanner() {
     const scannerLine = document.getElementById('scanner-line');
     if (scannerLine) scannerLine.style.display = 'none';
 
-    if (html5Qrcode && html5Qrcode.isScanning) {
-        html5Qrcode.stop()
-            .then(() => { try { html5Qrcode.clear(); } catch(e) {} html5Qrcode = null; })
-            .catch(err => { console.error('Stopp-Fehler:', err); html5Qrcode = null; });
-    } else {
-        if (html5Qrcode) { try { html5Qrcode.clear(); } catch(e) {} html5Qrcode = null; }
+    if (scannerLoopId) {
+        cancelAnimationFrame(scannerLoopId);
+        scannerLoopId = null;
+    }
+
+    if (cameraStream) {
+        cameraStream.getTracks().forEach(track => track.stop());
+        cameraStream = null;
+    }
+
+    const video = document.getElementById('barcode-video');
+    if (video) {
+        video.srcObject = null;
     }
 }
 

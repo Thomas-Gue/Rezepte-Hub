@@ -16,8 +16,7 @@
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <!-- SortableJS für Drag & Drop -->
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-    <!-- html5-qrcode für Kamera-Barcode-Scanner -->
-    <script src="https://unpkg.com/html5-qrcode"></script>
+
 </head>
 
 <body>
@@ -306,6 +305,12 @@
             <!-- Kamera-Viewport -->
             <div id="camera-viewport"
                 style="width: 100%; height: 240px; border-radius: var(--radius-md); overflow: hidden; background: #0f172a; position: relative; border: 2px solid rgba(99,102,241,0.4);">
+                
+                <!-- Neues natives Video-Element -->
+                <video id="barcode-video" autoplay playsinline muted style="width: 100%; height: 100%; object-fit: cover;"></video>
+                <!-- Verstecktes Canvas für zxing-wasm Fallback -->
+                <canvas id="barcode-canvas" style="display: none;"></canvas>
+
                 <!-- Scanner-Linie Animation -->
                 <div id="scanner-line"
                     style="position: absolute; left: 0; right: 0; top: 50%; height: 2px; background: linear-gradient(90deg, transparent, #6366f1, transparent); animation: scanLine 2s ease-in-out infinite; z-index: 10; display: none;">
