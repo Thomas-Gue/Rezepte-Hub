@@ -901,10 +901,8 @@ async function startCameraScanner() {
     try {
         cameraStream = await navigator.mediaDevices.getUserMedia({
             video: { 
-                facingMode: 'environment', 
-                width: { ideal: 1920 },
-                height: { ideal: 1080 },
-                advanced: [{ focusMode: 'continuous' }] 
+                facingMode: 'environment',
+                advanced: [{ focusMode: 'continuous' }, { zoom: 2.0 }]
             }
         });
         video.srcObject = cameraStream;
@@ -1025,7 +1023,7 @@ async function handleBarcodeLookup(barcode) {
     if (productCache[cleanBarcode] !== undefined) {
         const cached = productCache[cleanBarcode];
         if (!cached) {
-            showToast('Nicht gefunden', 'Produkt ist nicht in der Datenbank.', true);
+            showToast('Nicht gefunden', `Barcode ${cleanBarcode} ist nicht in der Datenbank.`, true);
             return;
         }
         addIngredientFromData(cleanBarcode, cached);
@@ -1046,7 +1044,7 @@ async function handleBarcodeLookup(barcode) {
         productCache[cleanBarcode] = data || null;
 
         if (!data) {
-            showToast('Nicht gefunden', 'Produkt ist nicht in der Datenbank.', true);
+            showToast('Nicht gefunden', `Barcode ${cleanBarcode} ist nicht in der Datenbank.`, true);
             return;
         }
 
