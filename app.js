@@ -870,13 +870,17 @@ let cameraStream = null;
 let scannerLoopId = null;
 let nativeBarcodeDetector = null;
 
-
 if ('BarcodeDetector' in window) {
-    try {
-        nativeBarcodeDetector = new BarcodeDetector({ formats: ['ean_13', 'ean_8'] });
-    } catch (e) {
-        console.warn('Native BarcodeDetector nicht verfügbar, nutze Fallback.', e);
-    }
+    BarcodeDetector.getSupportedFormats()
+        .then(formats => {
+            if (formats.includes('ean_13') || formats.includes('ean_8')) {
+                nativeBarcodeDetector = new BarcodeDetector({ formats: ['ean_13', 'ean_8'] });
+                console.log('Nativer BarcodeDetector aktiviert (unterstützt EAN).');
+            } else {
+                console.log('Nativer BarcodeDetector unterstützt kein EAN. Nutze Fallback.');
+            }
+        })
+        .catch(e => console.warn('Fehler bei Überprüfung der Barcode-Formate', e));
 }
 
 async function startCameraScanner() {
@@ -945,8 +949,10 @@ async function scanLoop() {
                 if (barcodes.length > 0) {
                     barcodeFound = barcodes[0].rawValue;
                 }
-            } else if (window.zxingReadBarcodes) {
-                // Priorität 2: zxing-wasm Fallback (iPad/Safari)
+            } 
+            
+            if (!barcodeFound && window.zxingReadBarcodes) {
+                // Priorität 2: zxing-wasm Fallback (iPad/Safari oder wenn Nativ versagt)
                 const ctx = canvas.getContext('2d', { willReadFrequently: true });
                 canvas.width = video.videoWidth;
                 canvas.height = video.videoHeight;
@@ -954,8 +960,7 @@ async function scanLoop() {
                 const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
                 
                 const results = await window.zxingReadBarcodes(imageData, {
-                    tryHarder: true,
-                    formats: ['EAN_13', 'EAN_8']
+                    tryHarder: true
                 });
                 
                 if (results && results.length > 0) {
@@ -1002,8 +1007,14 @@ function stopCameraScanner() {
 // BARCODE LOOKUP MODAL ENGINE
 // ============================================================
 async function handleBarcodeLookup(barcode) {
-    const cleanBarcode = barcode.trim().replace(/[\.\#\$\[\]\/]/g, '_');
+    let cleanBarcode = barcode.trim().replace(/[\.\#\$\[\]\/]/g, '_');
     if (!cleanBarcode) return;
+
+    // OpenFoodFacts nutzt das 13-stellige GTIN-Format. 
+    // Wenn ein Barcode 8 oder 12 Stellen hat (EAN-8 oder UPC-A), wird er mit führenden Nullen aufgefüllt.
+    if (cleanBarcode.match(/^\d+$/) && cleanBarcode.length < 13) {
+        cleanBarcode = cleanBarcode.padStart(13, '0');
+    }
 
     // 1. Cache-Treffer? → sofortige Antwort (0ms Latenz)
     if (productCache[cleanBarcode] !== undefined) {
