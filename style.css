@@ -2035,3 +2035,83 @@ body {
     margin-left: auto;
     padding-left: 8px;
 }
+ 
+ / *   - - -   R e c i p e   L a b e l s   - - -   * / 
+ . l a b e l s - l i s t   { 
+         d i s p l a y :   f l e x ; 
+         f l e x - w r a p :   w r a p ; 
+         g a p :   8 p x ; 
+         m a r g i n - b o t t o m :   8 p x ; 
+ } 
+ 
+ . l a b e l - c h i p   { 
+         d i s p l a y :   i n l i n e - f l e x ; 
+         a l i g n - i t e m s :   c e n t e r ; 
+         b a c k g r o u n d :   v a r ( - - s u r f a c e - l i g h t ) ; 
+         c o l o r :   v a r ( - - t e x t - m a i n ) ; 
+         p a d d i n g :   4 p x   1 0 p x ; 
+         b o r d e r - r a d i u s :   1 6 p x ; 
+         f o n t - s i z e :   0 . 8 5 r e m ; 
+         f o n t - w e i g h t :   5 0 0 ; 
+         b o r d e r :   1 p x   s o l i d   v a r ( - - b o r d e r - c o l o r ) ; 
+ } 
+ 
+ . l a b e l - c h i p   . r e m o v e - l a b e l   { 
+         m a r g i n - l e f t :   6 p x ; 
+         c u r s o r :   p o i n t e r ; 
+         c o l o r :   v a r ( - - t e x t - m u t e d ) ; 
+         d i s p l a y :   f l e x ; 
+         a l i g n - i t e m s :   c e n t e r ; 
+         j u s t i f y - c o n t e n t :   c e n t e r ; 
+         t r a n s i t i o n :   c o l o r   0 . 2 s   e a s e ; 
+ } 
+ 
+ . l a b e l - c h i p   . r e m o v e - l a b e l : h o v e r   { 
+         c o l o r :   v a r ( - - a c c e n t - r e d ) ; 
+ } 
+ 
+ . l a b e l - c h i p   . r e m o v e - l a b e l   s v g   { 
+         w i d t h :   1 4 p x ; 
+         h e i g h t :   1 4 p x ; 
+ } 
+ 
+ 
+ 
+/* --- Recipe Labels --- */
+.labels-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.label-chip {
+    display: inline-flex;
+    align-items: center;
+    background: var(--surface-light);
+    color: var(--text-main);
+    padding: 4px 10px;
+    border-radius: 16px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    border: 1px solid var(--border-color);
+}
+
+.label-chip .remove-label {
+    margin-left: 6px;
+    cursor: pointer;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s ease;
+}
+
+.label-chip .remove-label:hover {
+    color: var(--accent-red);
+}
+
+.label-chip .remove-label svg {
+    width: 14px;
+    height: 14px;
+}

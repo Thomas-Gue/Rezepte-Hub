@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Rezept Hub</title>
     <!-- Eigenes Styling mit Cache-Buster -->
-    <link rel="stylesheet" href="style.css?v=3">
+    <link rel="stylesheet" href="style.css?v=4">
     <!-- Google Fonts: Inter -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -128,11 +128,30 @@
             <div class="recipe-left">
 
                 <!-- Titel & Kurzbeschreibung -->
-                <div class="bento-box recipe-info-box">
+                <div class="bento-box recipe-info-box" style="position: relative; overflow: visible !important;">
+                    <!-- Rezept löschen Button -->
+                    <button class="zutat-delete-btn" id="btn-delete-recipe" title="Rezept löschen" style="position: absolute; top: 12px; right: 12px; opacity: 1; display: flex;">
+                        <i data-feather="x"></i>
+                    </button>
                     <h1 class="recipe-title" id="rv-titel" contenteditable="true" data-field="titel"
                         data-placeholder="Rezepttitel eingeben..."></h1>
                     <p class="recipe-short-desc" id="rv-kurzbeschreibung" contenteditable="true"
                         data-field="kurzbeschreibung" data-placeholder="Kurze Beschreibung des Rezepts…"></p>
+                        
+                    <!-- Labels Container -->
+                    <div class="recipe-labels-wrapper" style="margin-top: 15px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+                        <div id="rv-labels-list" class="labels-list" style="margin-bottom: 0;">
+                            <!-- Dynamische Label-Chips werden hier gerendert -->
+                        </div>
+                        <div class="label-search-wrapper" style="position: relative; margin: 0;">
+                            <style>
+                                #label-search-input::placeholder { color: var(--text-muted); font-weight: 500; }
+                                #label-search-input:focus { border-color: var(--accent-blue) !important; background: rgba(29, 161, 242, 0.05) !important; }
+                            </style>
+                            <input type="text" id="label-search-input" placeholder="+ Label" autocomplete="off" onfocus="this.placeholder=''" onblur="this.placeholder='+ Label'" style="width: 140px; padding: 8px 16px; font-size: 0.9rem; text-align: center; cursor: text; background: transparent; color: var(--text-main); border: 2px dashed #cbd5e1; border-radius: 24px; font-weight: 600; outline: none; transition: all 0.2s ease;">
+                            <div class="ingredient-search-results" id="label-search-results" style="display: none; position: absolute; z-index: 1000; margin-top: 4px; min-width: 200px; text-align: left; top: 100%; left: 0; box-shadow: 0 4px 12px rgba(0,0,0,0.1);"></div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Key-Property-Badges -->
@@ -418,7 +437,7 @@
     <div id="toast-container" class="toast-container"></div>
 
     <!-- Eigene Logik mit Cache-Buster für mobile Endgeräte -->
-    <script src="app.js?v=3"></script>
+    <script src="app.js?v=8"></script>
 </body>
 
 </html>

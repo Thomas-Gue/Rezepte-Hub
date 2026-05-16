@@ -169,6 +169,7 @@ const DEFAULT_RECIPES = {
 // ============================================================
 let recipes = {}; // Geladen von Cache / Firebase / Fallback
 let currentRecipe = null;
+let allLabels = [];
 let basePortion = 1;
 let currentPortion = 1;
 let sortableIngredients = null;
@@ -249,6 +250,15 @@ function loadRecipesFromCache() {
 async function loadRecipesFromFirebase() {
     // 1. Lade SOFORT aus dem lokalen Cache
     loadRecipesFromCache();
+    
+    // Lade globale Labels
+    try {
+        const labelsRes = await fetch(`${FIREBASE_URL}/labels.json`);
+        if (labelsRes.ok) {
+            const ldata = await labelsRes.json();
+            if (ldata) allLabels = Object.values(ldata).filter(Boolean);
+        }
+    } catch(e) { console.warn("Konnte Labels nicht laden", e); }
     
     // 2. Aktualisiere im Hintergrund von Firebase
     try {
@@ -700,6 +710,7 @@ function loadRecipe(recipe) {
     updateNutritionDisplay(recipe);
     renderIngredients(recipe.zutaten, currentPortion, basePortion);
     renderPreparationEditor(recipe);
+    renderLabels(recipe.labels || []);
 
     // Event Listener für Always-Editable Felder
     ['rv-titel', 'rv-kurzbeschreibung', 'rv-kalorien', 'rv-kosten', 'rv-dauer'].forEach(id => {
@@ -717,6 +728,13 @@ function triggerAutosave() {
     
     // Lokales Update sofort (für UI Konsistenz)
     syncAllToState();
+    
+    // WICHTIG: Sofort lokal speichern, damit Navigieren (Zurück-Button) oder ein Seiten-Reload
+    // die Änderungen (wie neue Labels) nicht vergisst!
+    if (currentRecipe && currentRecipe.id) {
+        recipes[currentRecipe.id] = currentRecipe;
+        localStorage.setItem('recipes_cache', JSON.stringify(recipes));
+    }
     
     // Nach 5 Minuten an Firebase senden (Wunsch des Users)
     // Für besseres Feedback nutzen wir 30s im Hintergrund, aber ich stelle hier 5 Min ein
@@ -1101,6 +1119,11 @@ async function handleBarcodeLookup(barcode) {
 // Zutat aus Firebase-Daten aufbauen und zur Liste hinzufügen
 // Kamera und Modal bleiben offen!
 function addIngredientFromData(cleanBarcode, data) {
+    // Verhindere mehrfaches Hinzufügen desselben Produkts und unterdrücke das Popup
+    if (cleanBarcode && currentRecipe.zutaten.some(z => z.barcode === cleanBarcode)) {
+        return;
+    }
+
     const title = data.product_name || 'Unbekanntes Produkt';
     const brand = data.brands || '';
     const displayName = brand ? `${title} (${brand})` : title;
@@ -1456,6 +1479,9 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-back-from-recipe')?.addEventListener('click', () => showView('recipes-view'));
 
     // Rezept-Detail Actions
+    document.getElementById('btn-delete-recipe')?.addEventListener('click', () => {
+        if (currentRecipe && currentRecipe.id) deleteRecipe(currentRecipe.id);
+    });
     document.getElementById('btn-portion-settings')?.addEventListener('click', openPortionModal);
     document.getElementById('btn-close-portion-modal')?.addEventListener('click', closePortionModal);
     document.getElementById('btn-save-portions')?.addEventListener('click', saveManualPortions);
@@ -1487,6 +1513,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Ingredient Search & Barcode
     setupInlineIngredientSearch();
+    setupLabelSearch();
     document.getElementById('btn-barcode-inline')?.addEventListener('click', () => {
         document.getElementById('barcode-modal').style.display = 'flex';
         startCameraScanner();
@@ -1693,4 +1720,140 @@ function renderStandaloneResults(items, resultsEl) {
         resultsEl.appendChild(div);
     });
     resultsEl.style.display = 'block';
+}
+
+// ============================================================
+// RECIPE DELETION
+// ============================================================
+async function deleteRecipe(recipeId) {
+    if (!confirm("Bist du dir sicher, dass du das Rezept löschen willst?")) return;
+    
+    try {
+        delete recipes[recipeId];
+        localStorage.setItem('recipes_cache', JSON.stringify(recipes));
+        
+        const response = await fetch(`${FIREBASE_URL}/recipes/${recipeId}.json`, {
+            method: 'DELETE'
+        });
+        
+        if (!response.ok) throw new Error("Fehler beim Löschen");
+        
+        showToast("Gelöscht", "Rezept wurde gelöscht.", false);
+        showView('recipes-view');
+        renderRecipesList();
+    } catch (error) {
+        console.error("Lösch-Fehler:", error);
+        showToast("Fehler", "Rezept konnte nicht gelöscht werden.", true);
+    }
+}
+
+// ============================================================
+// RECIPE LABELS
+// ============================================================
+function renderLabels(labels) {
+    const container = document.getElementById('rv-labels-list');
+    if (!container) return;
+    container.innerHTML = '';
+    
+    if (!currentRecipe.labels) currentRecipe.labels = [];
+    
+    labels.forEach((label) => {
+        const chip = document.createElement('div');
+        chip.className = 'label-chip';
+        chip.innerHTML = `
+            ${label}
+            <span class="remove-label" onclick="removeLabelFromRecipe('${label}')" title="Label entfernen">
+                <i data-feather="x"></i>
+            </span>
+        `;
+        container.appendChild(chip);
+    });
+    if (typeof feather !== 'undefined') feather.replace();
+}
+
+async function addLabelToRecipe(labelName) {
+    if (!labelName) return;
+    const cleanLabel = labelName.trim();
+    if (!cleanLabel) return;
+    
+    if (!currentRecipe.labels) currentRecipe.labels = [];
+    if (!currentRecipe.labels.includes(cleanLabel)) {
+        currentRecipe.labels.push(cleanLabel);
+        renderLabels(currentRecipe.labels);
+        triggerAutosave();
+        
+        if (!allLabels.includes(cleanLabel)) {
+            allLabels.push(cleanLabel);
+            // Save to Firebase globally
+            const key = cleanLabel.replace(/[.#$[\]/]/g, '_');
+            fetch(`${FIREBASE_URL}/labels/${key}.json`, {
+                method: 'PUT',
+                body: JSON.stringify(cleanLabel)
+            }).catch(e => console.error("Fehler beim Speichern des globalen Labels", e));
+        }
+    }
+}
+
+function removeLabelFromRecipe(labelName) {
+    if (!currentRecipe || !currentRecipe.labels) return;
+    currentRecipe.labels = currentRecipe.labels.filter(l => l !== labelName);
+    renderLabels(currentRecipe.labels);
+    triggerAutosave();
+}
+
+function setupLabelSearch() {
+    const input = document.getElementById('label-search-input');
+    const resultsEl = document.getElementById('label-search-results');
+    if (!input || !resultsEl) return;
+
+    input.addEventListener('input', (e) => {
+        const val = e.target.value.trim().toLowerCase();
+        if (val.length < 1) {
+            resultsEl.style.display = 'none';
+            return;
+        }
+        
+        resultsEl.innerHTML = '';
+        const matches = allLabels.filter(l => l.toLowerCase().includes(val));
+        
+        matches.forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'ingredient-dropdown-item';
+            div.textContent = item;
+            div.addEventListener('click', () => {
+                resultsEl.style.display = 'none';
+                input.value = '';
+                addLabelToRecipe(item);
+            });
+            resultsEl.appendChild(div);
+        });
+        
+        // Neu hinzufügen Option
+        const exactMatch = allLabels.find(l => l.toLowerCase() === val);
+        if (!exactMatch) {
+            const manualDiv = document.createElement('div');
+            manualDiv.className = 'ingredient-dropdown-item manual-add-option';
+            manualDiv.style.borderTop = '1px solid #f1f5f9';
+            manualDiv.style.color = 'var(--accent-blue)';
+            manualDiv.style.fontWeight = '700';
+            manualDiv.innerHTML = `<i data-feather="plus-circle" style="width:14px;height:14px;margin-right:6px;vertical-align:middle;"></i> Manuell hinzufügen`;
+            manualDiv.addEventListener('click', () => {
+                resultsEl.style.display = 'none';
+                const newLabel = e.target.value.trim();
+                input.value = '';
+                addLabelToRecipe(newLabel);
+            });
+            resultsEl.appendChild(manualDiv);
+        }
+        
+        if (typeof feather !== 'undefined') feather.replace();
+        resultsEl.style.display = 'block';
+    });
+
+    // Hide dropdown on blur/outside click
+    document.addEventListener('click', (e) => {
+        if (!input.contains(e.target) && !resultsEl.contains(e.target)) {
+            resultsEl.style.display = 'none';
+        }
+    });
 }
