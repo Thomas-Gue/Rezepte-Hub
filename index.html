@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Rezept Hub</title>
     <!-- Eigenes Styling mit Cache-Buster -->
-    <link rel="stylesheet" href="style.css?v=10">
+    <link rel="stylesheet" href="style.css?v=12">
     <!-- Google Fonts: Inter -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -145,21 +145,25 @@
                 <!-- Titel & Kurzbeschreibung -->
                 <div class="bento-box recipe-info-box" style="position: relative; overflow: visible !important;">
                     <!-- Rezept löschen Button -->
-                    <button class="zutat-delete-btn" id="btn-delete-recipe" title="Rezept löschen" style="position: absolute; top: 12px; right: 12px; opacity: 1; display: flex;">
+                    <button class="zutat-delete-btn" id="btn-delete-recipe" title="Rezept löschen"
+                        style="position: absolute; top: 12px; right: 12px; opacity: 1; display: flex;">
                         <i data-feather="x"></i>
                     </button>
                     <h1 class="recipe-title" id="rv-titel" contenteditable="true" data-field="titel"
                         data-placeholder="Rezepttitel eingeben..."></h1>
                     <p class="recipe-short-desc" id="rv-kurzbeschreibung" contenteditable="true"
                         data-field="kurzbeschreibung" data-placeholder="Kurze Beschreibung des Rezepts…"></p>
-                        
+
                     <!-- Labels Container -->
-                    <div class="recipe-labels-wrapper" style="margin-top: 15px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+                    <div class="recipe-labels-wrapper"
+                        style="margin-top: 15px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
                         <div id="rv-labels-list" class="labels-list" style="margin-bottom: 0;">
                             <!-- Dynamische Label-Chips werden hier gerendert -->
                         </div>
-                        <div class="search-input-wrapper dashed-search" id="label-search-container" style="width: 180px; flex: none;">
-                            <input type="text" id="label-search-input" placeholder="Label hinzufügen..." autocomplete="off">
+                        <div class="search-input-wrapper dashed-search" id="label-search-container"
+                            style="width: 180px; flex: none;">
+                            <input type="text" id="label-search-input" placeholder="Label hinzufügen..."
+                                autocomplete="off">
                             <div id="label-search-results" class="ingredient-dropdown" style="display: none;"></div>
                         </div>
                     </div>
@@ -336,12 +340,15 @@
             <!-- Kamera-Viewport -->
             <div id="camera-viewport"
                 style="width: 100%; height: 240px; border-radius: var(--radius-md); overflow: hidden; background: #0f172a; position: relative; border: 2px solid rgba(99,102,241,0.4);">
-                
+
                 <!-- Kamera-Umschalt Button -->
-                <button id="btn-switch-camera" class="action-btn" style="position: absolute; top: 10px; right: 10px; z-index: 20; padding: 8px; border-radius: 50%; width: 40px; height: 40px; justify-content: center;"><i data-feather="refresh-cw"></i></button>
+                <button id="btn-switch-camera" class="action-btn"
+                    style="position: absolute; top: 10px; right: 10px; z-index: 20; padding: 8px; border-radius: 50%; width: 40px; height: 40px; justify-content: center;"><i
+                        data-feather="refresh-cw"></i></button>
 
                 <!-- Neues natives Video-Element -->
-                <video id="barcode-video" autoplay playsinline muted style="width: 100%; height: 100%; object-fit: cover;"></video>
+                <video id="barcode-video" autoplay playsinline muted
+                    style="width: 100%; height: 100%; object-fit: cover;"></video>
                 <!-- Verstecktes Canvas für zxing-wasm Fallback -->
                 <canvas id="barcode-canvas" style="display: none;"></canvas>
 
@@ -468,7 +475,7 @@
     <div id="toast-container" class="toast-container"></div>
 
     <!-- Eigene Logik mit Cache-Buster für mobile Endgeräte -->
-    <script src="app.js?v=18"></script>
+    <script src="app.js?v=21"></script>
 </body>
 
 </html>

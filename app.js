@@ -562,7 +562,7 @@ function recalculateRecipeCost(recipe) {
     if (!recipe.zutaten || recipe.zutaten.length === 0) return;
     let totalCost = 0;
     let hasPricedIngredients = false;
-    
+
     recipe.zutaten.forEach(z => {
         if (z.preisProKg !== undefined && z.preisProKg !== null && z.preisProKg > 0) {
             hasPricedIngredients = true;
@@ -570,7 +570,7 @@ function recalculateRecipeCost(recipe) {
             totalCost += grams * (z.preisProKg / 1000);
         }
     });
-    
+
     if (hasPricedIngredients) {
         recipe.kosten = Math.round(totalCost * 100) / 100;
         const costEl = document.getElementById('rv-kosten');
@@ -808,7 +808,7 @@ function syncIngredientsFromDOM() {
     currentRecipe.zutaten = Array.from(items).map(li => {
         const selectEl = li.querySelector('.zutat-einheit-select');
         const unit = selectEl ? selectEl.value : 'g';
-        
+
         // Erhalte das bestehende stkInGrams und preisProKg falls vorhanden
         const indexStr = li.dataset.index || '';
         const idx = parseInt(indexStr);
@@ -969,7 +969,7 @@ function openIngredientModal(index) {
         `;
         grid.appendChild(stkField);
     }
-    
+
     if (z.einheit === 'Stk.') {
         stkField.style.display = 'block';
         document.getElementById('mi-stk-grams').value = z.stkInGrams || 100;
@@ -997,7 +997,7 @@ function saveIngredientDetail() {
     z.naehrwerte['sugars_100g'] = parseFloat(document.getElementById('mi-sugars').value) || 0;
     z.naehrwerte['fiber_100g'] = parseFloat(document.getElementById('mi-fiber').value) || 0;
     z.naehrwerte['salt_100g'] = parseFloat(document.getElementById('mi-salt').value) || 0;
-    
+
     z.preisProKg = parseFloat(document.getElementById('mi-preis').value) || 0;
 
     const stkInput = document.getElementById('mi-stk-grams');
@@ -1382,12 +1382,11 @@ function setupIngredientSearch() {
             // 1. Hole lokale Kandidaten
             const candidates = getFuzzyCandidates();
 
-            // 2. Hole Firebase-Kandidaten per Präfix der ersten 3 Zeichen
-            const prefixLen = Math.min(3, rawQuery.length);
-            const prefix = rawQuery.slice(0, prefixLen).toLowerCase().replace(/[.#$[\]/]/g, '_');
+            // 2. Hole Firebase-Kandidaten per Präfix des gesamten Suchbegriffs (nicht auf 3 Zeichen limitiert!)
+            const prefix = rawQuery.toLowerCase().replace(/[.#$[\]/]/g, '_');
             const end = prefix + '\uf8ff';
             const url = `${FIREBASE_URL}/name_index.json?orderBy="%24key"&startAt=${encodeURIComponent(JSON.stringify(prefix))}&endAt=${encodeURIComponent(JSON.stringify(end))}&limitToFirst=60`;
-            
+
             let fbItems = [];
             try {
                 const res = await fetch(url);
@@ -1404,7 +1403,7 @@ function setupIngredientSearch() {
             // 3. Zusammenführen und Duplikate filtern
             const merged = [...fbItems];
             const seenNames = new Set(fbItems.map(item => (item.product_name || '').toLowerCase().trim()));
-            
+
             candidates.forEach(cand => {
                 const candName = cand.product_name.toLowerCase().trim();
                 if (!seenNames.has(candName)) {
@@ -1529,8 +1528,8 @@ function renderRecipesList() {
             ${imgHtml}
             <div class="recipe-card-info">
                 ${labelsHtml}
-                <h3>${recipe.titel}</h3>
-                <p>${recipe.kurzbeschreibung}</p>
+                <h3>${recipe.titel || 'Unbenanntes Rezept'}</h3>
+                <p>${recipe.kurzbeschreibung || 'Keine Beschreibung vorhanden'}</p>
                 <span class="recipe-meta">
                     <i data-feather="clock"></i> ${recipe.dauer} Min. &bull; 🔥 ${recipe.kalorien} kcal
                 </span>
@@ -1595,7 +1594,7 @@ function updateRecentList() {
         item.dataset.id = recipe.id;
         item.innerHTML = `
             <div class="recent-info">
-                <span class="recent-title">${recipe.titel}</span>
+                <span class="recent-title">${recipe.titel || 'Unbenanntes Rezept'}</span>
                 ${labelsHtml}
             </div>
         `;
@@ -1793,8 +1792,8 @@ document.addEventListener('DOMContentLoaded', () => {
 function createNewRecipe() {
     const newRecipe = {
         id: 'new-' + Date.now(),
-        titel: 'Neues Rezept',
-        kurzbeschreibung: 'Gib eine kurze Beschreibung ein…',
+        titel: '',
+        kurzbeschreibung: '',
         kalorien: 0,
         kosten: 0.00,
         dauer: 20,
@@ -1860,12 +1859,12 @@ function getFuzzyMatchScore(s1, s2) {
     s1 = s1.toLowerCase().trim();
     s2 = s2.toLowerCase().trim();
     if (s1 === s2) return 1.0;
-    
+
     // Substring bonus
     if (s1.includes(s2) || s2.includes(s1)) {
         return 0.8 + (Math.min(s1.length, s2.length) / Math.max(s1.length, s2.length)) * 0.19;
     }
-    
+
     // Levenshtein
     const track = Array(s2.length + 1).fill(null).map(() => Array(s1.length + 1).fill(null));
     for (let i = 0; i <= s1.length; i += 1) track[0][i] = i;
@@ -1888,7 +1887,7 @@ function getFuzzyMatchScore(s1, s2) {
 function getFuzzyCandidates() {
     const list = new Set(COMMON_INGREDIENTS);
     getUniqueIngredientsFromRecipes().forEach(name => list.add(name));
-    
+
     return Array.from(list).map(name => {
         return {
             product_name: name,
@@ -1917,12 +1916,11 @@ function setupInlineIngredientSearch() {
             // 1. Hole lokale Kandidaten
             const candidates = getFuzzyCandidates();
 
-            // 2. Hole Firebase-Kandidaten per Präfix der ersten 3 Zeichen
-            const prefixLen = Math.min(3, rawQuery.length);
-            const prefix = rawQuery.slice(0, prefixLen).toLowerCase().replace(/[.#$[\]/]/g, '_');
+            // 2. Hole Firebase-Kandidaten per Präfix des gesamten Suchbegriffs (nicht auf 3 Zeichen limitiert!)
+            const prefix = rawQuery.toLowerCase().replace(/[.#$[\]/]/g, '_');
             const end = prefix + '\uf8ff';
             const url = `${FIREBASE_URL}/name_index.json?orderBy="%24key"&startAt=${encodeURIComponent(JSON.stringify(prefix))}&endAt=${encodeURIComponent(JSON.stringify(end))}&limitToFirst=60`;
-            
+
             let fbItems = [];
             try {
                 const res = await fetch(url);
@@ -1939,7 +1937,7 @@ function setupInlineIngredientSearch() {
             // 3. Zusammenführen und Duplikate filtern
             const merged = [...fbItems];
             const seenNames = new Set(fbItems.map(item => (item.product_name || '').toLowerCase().trim()));
-            
+
             candidates.forEach(cand => {
                 const candName = cand.product_name.toLowerCase().trim();
                 if (!seenNames.has(candName)) {
@@ -1966,8 +1964,8 @@ function setupInlineIngredientSearch() {
 
             ingredientSearchCache[cacheKey] = finalItems;
             renderInlineResults(finalItems, resultsEl);
-        } catch (err) { 
-            console.error("Fuzzy-Zutatensuche Fehler:", err); 
+        } catch (err) {
+            console.error("Fuzzy-Zutatensuche Fehler:", err);
         }
     }, 250);
 
