@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Rezept Hub</title>
     <!-- Eigenes Styling mit Cache-Buster -->
-    <link rel="stylesheet" href="style.css?v=4">
+    <link rel="stylesheet" href="style.css?v=10">
     <!-- Google Fonts: Inter -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -37,16 +37,31 @@
                 </div>
                 <div class="recent-list">
                     <div class="recent-item">
-                        <div class="recent-img placeholder-img"></div>
-                        <span>Spaghetti Carbonara</span>
+                        <div class="recent-info">
+                            <span class="recent-title">Spaghetti Carbonara</span>
+                            <div class="card-labels">
+                                <span class="card-label-badge">Pasta</span>
+                                <span class="card-label-badge">Klassiker</span>
+                            </div>
+                        </div>
                     </div>
                     <div class="recent-item">
-                        <div class="recent-img placeholder-img"></div>
-                        <span>Linsen-Dal</span>
+                        <div class="recent-info">
+                            <span class="recent-title">Linsen-Dal</span>
+                            <div class="card-labels">
+                                <span class="card-label-badge">Veggie</span>
+                                <span class="card-label-badge">Indisch</span>
+                            </div>
+                        </div>
                     </div>
                     <div class="recent-item">
-                        <div class="recent-img placeholder-img"></div>
-                        <span>Avocado Toast</span>
+                        <div class="recent-info">
+                            <span class="recent-title">Avocado Toast</span>
+                            <div class="card-labels">
+                                <span class="card-label-badge">Schnell</span>
+                                <span class="card-label-badge">Frühstück</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -143,13 +158,9 @@
                         <div id="rv-labels-list" class="labels-list" style="margin-bottom: 0;">
                             <!-- Dynamische Label-Chips werden hier gerendert -->
                         </div>
-                        <div class="label-search-wrapper" style="position: relative; margin: 0;">
-                            <style>
-                                #label-search-input::placeholder { color: var(--text-muted); font-weight: 500; }
-                                #label-search-input:focus { border-color: var(--accent-blue) !important; background: rgba(29, 161, 242, 0.05) !important; }
-                            </style>
-                            <input type="text" id="label-search-input" placeholder="+ Label" autocomplete="off" onfocus="this.placeholder=''" onblur="this.placeholder='+ Label'" style="width: 140px; padding: 8px 16px; font-size: 0.9rem; text-align: center; cursor: text; background: transparent; color: var(--text-main); border: 2px dashed #cbd5e1; border-radius: 24px; font-weight: 600; outline: none; transition: all 0.2s ease;">
-                            <div class="ingredient-search-results" id="label-search-results" style="display: none; position: absolute; z-index: 1000; margin-top: 4px; min-width: 200px; text-align: left; top: 100%; left: 0; box-shadow: 0 4px 12px rgba(0,0,0,0.1);"></div>
+                        <div class="search-input-wrapper dashed-search" id="label-search-container" style="width: 180px; flex: none;">
+                            <input type="text" id="label-search-input" placeholder="Label hinzufügen..." autocomplete="off">
+                            <div id="label-search-results" class="ingredient-dropdown" style="display: none;"></div>
                         </div>
                     </div>
                 </div>
@@ -160,13 +171,13 @@
                     <div class="bento-box key-prop-badge" id="badge-kalorien">
                         <span class="badge-icon">🔥</span>
                         <span class="badge-label">kcal / Portion</span>
-                        <span class="badge-value" id="rv-kalorien" contenteditable="true" data-field="kalorien">0</span>
+                        <span class="badge-value" id="rv-kalorien" data-field="kalorien">0</span>
                     </div>
                     <!-- Kosten -->
                     <div class="bento-box key-prop-badge" id="badge-kosten">
                         <span class="badge-icon">💶</span>
                         <span class="badge-label">Kosten / Portion</span>
-                        <span class="badge-value" id="rv-kosten" contenteditable="true" data-field="kosten">0.00</span>
+                        <span class="badge-value" id="rv-kosten" data-field="kosten">0.00</span>
                     </div>
                     <!-- Dauer -->
                     <div class="bento-box key-prop-badge" id="badge-dauer">
@@ -422,6 +433,26 @@
                     <label>Kohlenh. / 100g</label>
                     <input type="number" id="mi-carbs" step="0.1">
                 </div>
+                <div class="modal-field">
+                    <label>Ges. Fetts. / 100g</label>
+                    <input type="number" id="mi-saturated-fat" step="0.1">
+                </div>
+                <div class="modal-field">
+                    <label>Zucker / 100g</label>
+                    <input type="number" id="mi-sugars" step="0.1">
+                </div>
+                <div class="modal-field">
+                    <label>Ballastst. / 100g</label>
+                    <input type="number" id="mi-fiber" step="0.1">
+                </div>
+                <div class="modal-field">
+                    <label>Salz / 100g</label>
+                    <input type="number" id="mi-salt" step="0.1">
+                </div>
+                <div class="modal-field">
+                    <label>Preis (€ / kg)</label>
+                    <input type="number" id="mi-preis" step="0.01">
+                </div>
             </div>
 
             <div class="modal-actions" style="margin-top: 24px; display: flex; gap: 12px;">
@@ -437,7 +468,7 @@
     <div id="toast-container" class="toast-container"></div>
 
     <!-- Eigene Logik mit Cache-Buster für mobile Endgeräte -->
-    <script src="app.js?v=8"></script>
+    <script src="app.js?v=18"></script>
 </body>
 
 </html>

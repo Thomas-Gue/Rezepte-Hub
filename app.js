@@ -15,6 +15,7 @@ const DEFAULT_RECIPES = {
         dauer: 25,
         nutriScore: "C",
         portionen: 2,
+        labels: ["Pasta", "Klassiker"],
         naehrwerte: {
             'energy-kcal_100g': 340,
             'fat_100g': 15,
@@ -59,6 +60,7 @@ const DEFAULT_RECIPES = {
         dauer: 30,
         nutriScore: "A",
         portionen: 3,
+        labels: ["Veggie", "Indisch"],
         naehrwerte: {
             'energy-kcal_100g': 140,
             'fat_100g': 4,
@@ -101,6 +103,7 @@ const DEFAULT_RECIPES = {
         dauer: 10,
         nutriScore: "B",
         portionen: 1,
+        labels: ["Schnell", "Frühstück"],
         naehrwerte: {
             'energy-kcal_100g': 310,
             'fat_100g': 18,
@@ -135,6 +138,7 @@ const DEFAULT_RECIPES = {
         dauer: 40,
         nutriScore: "B",
         portionen: 2,
+        labels: ["Cremig", "Pilze"],
         naehrwerte: {
             'energy-kcal_100g': 260,
             'fat_100g': 8,
@@ -180,6 +184,7 @@ let ingredientSearchCache = {};     // In-Memory-Cache: Suchbegriff → Ergebnis
 let scanCooldown = false;           // Verhindert mehrfaches Auslösen des gleichen Frames
 let autosaveTimeout = null;
 let selectedIngredientIndex = -1;   // Für das Detail-Modal
+let previousView = 'main-view';      // Speichert die vorherige Ansicht für Zurück-Buttons
 
 
 // ============================================================
@@ -187,7 +192,7 @@ let selectedIngredientIndex = -1;   // Für das Detail-Modal
 // ============================================================
 function debounce(func, wait) {
     let timeout;
-    return function(...args) {
+    return function (...args) {
         clearTimeout(timeout);
         timeout = setTimeout(() => func.apply(this, args), wait);
     };
@@ -199,10 +204,10 @@ function debounce(func, wait) {
 function showToast(title, message, isError = false) {
     const container = document.getElementById('toast-container');
     if (!container) return;
-    
+
     const toast = document.createElement('div');
     toast.className = `toast ${isError ? 'toast-error' : ''}`;
-    
+
     const icon = isError ? '❌' : '✅';
     toast.innerHTML = `
         <div class="toast-icon">${icon}</div>
@@ -211,9 +216,9 @@ function showToast(title, message, isError = false) {
             <div class="toast-message">${message}</div>
         </div>
     `;
-    
+
     container.appendChild(toast);
-    
+
     // Automatisch nach 2.5 Sekunden ausfaden
     setTimeout(() => {
         toast.classList.add('fade-out');
@@ -231,6 +236,15 @@ function loadRecipesFromCache() {
     if (cached) {
         try {
             recipes = JSON.parse(cached);
+
+            // AUTOMATISCHES LABELS UPGRADE / SEED SYNC:
+            // Sicherstellen, dass Standardrezepte immer die schönen Labels haben, selbst bei altem Cache/DB
+            Object.keys(DEFAULT_RECIPES).forEach(id => {
+                if (recipes[id] && (!recipes[id].labels || recipes[id].labels.length === 0)) {
+                    recipes[id].labels = DEFAULT_RECIPES[id].labels;
+                }
+            });
+
             console.log("Rezepte blitzschnell aus Cache geladen (SWR):", recipes);
             renderRecipesList();
             updateRecentList();
@@ -247,41 +261,69 @@ function loadRecipesFromCache() {
     }
 }
 
+function loadLabelsFromCache() {
+    const cached = localStorage.getItem('global_labels');
+    if (cached) {
+        try {
+            allLabels = JSON.parse(cached);
+        } catch (e) { console.error(e); }
+    }
+}
+
 async function loadRecipesFromFirebase() {
     // 1. Lade SOFORT aus dem lokalen Cache
     loadRecipesFromCache();
-    
+    loadLabelsFromCache();
+
     // Lade globale Labels
     try {
         const labelsRes = await fetch(`${FIREBASE_URL}/labels.json`);
         if (labelsRes.ok) {
             const ldata = await labelsRes.json();
-            if (ldata) allLabels = Object.values(ldata).filter(Boolean);
+            if (ldata) {
+                allLabels = Object.values(ldata).filter(Boolean);
+                localStorage.setItem('global_labels', JSON.stringify(allLabels));
+            }
         }
-    } catch(e) { console.warn("Konnte Labels nicht laden", e); }
-    
+    } catch (e) { console.warn("Konnte Labels nicht laden", e); }
+
     // 2. Aktualisiere im Hintergrund von Firebase
     try {
         const response = await fetch(`${FIREBASE_URL}/recipes.json`);
         if (!response.ok) throw new Error("Netzwerkfehler");
-        
+
         let data = await response.json();
-        
+
         // Seeding falls Firebase komplett leer ist
         if (!data) {
             console.log("Firebase ist leer. Initialisiere Standardrezepte (Seeding)...");
             await seedDefaultRecipes();
             return;
         }
-        
+
         // Vergleiche eingehende Daten mit dem Cache, um Flackern zu verhindern
         const cachedStr = localStorage.getItem('recipes_cache');
         const incomingStr = JSON.stringify(data);
-        
+
         if (cachedStr !== incomingStr) {
             console.log("Änderung auf Firebase erkannt. UI wird flüssig aktualisiert...");
+
+            // WICHTIG: Wenn wir gerade ein Rezept bearbeiten, wollen wir dessen lokalen Stand
+            // in der recipes-Liste nicht durch den (evtl. veralteten) Stand von Firebase überschreiben!
+            if (currentRecipe && currentRecipe.id && data[currentRecipe.id]) {
+                data[currentRecipe.id] = currentRecipe;
+            }
+
             recipes = data;
-            localStorage.setItem('recipes_cache', incomingStr);
+
+            // Sicherstellen, dass Standardrezepte immer die schönen Labels haben, selbst bei altem Firebase-Stand
+            Object.keys(DEFAULT_RECIPES).forEach(id => {
+                if (recipes[id] && (!recipes[id].labels || recipes[id].labels.length === 0)) {
+                    recipes[id].labels = DEFAULT_RECIPES[id].labels;
+                }
+            });
+
+            localStorage.setItem('recipes_cache', JSON.stringify(recipes));
             renderRecipesList();
             updateRecentList();
             setupSearch();
@@ -302,7 +344,7 @@ async function seedDefaultRecipes() {
             body: JSON.stringify(DEFAULT_RECIPES)
         });
         if (!response.ok) throw new Error("Fehler beim Seeding");
-        
+
         recipes = JSON.parse(JSON.stringify(DEFAULT_RECIPES));
         localStorage.setItem('recipes_cache', JSON.stringify(recipes));
         showToast("Datenbank bereit", "Standardrezepte wurden in Firebase geladen.");
@@ -330,7 +372,6 @@ async function saveRecipeToFirebase(recipe) {
         });
         if (!response.ok) throw new Error("Fehler beim Senden");
         console.log(`Rezept ${recipe.id} in Firebase gespeichert!`);
-        showToast("Gespeichert", `"${recipe.titel}" wurde in Firebase gesichert.`);
     } catch (error) {
         console.error("Fehler beim Speichern in Firebase:", error);
         showToast("Hintergrund-Sync", "Konnte nicht in Cloud sichern. Lokal gespeichert.", true);
@@ -382,13 +423,13 @@ function getNutritionPerPortion(recipe) {
     if (totalGrams === 0) {
         return {
             'energy-kcal': nw['energy-kcal_100g'] !== undefined ? nw['energy-kcal_100g'] : null,
-            'fat':          nw['fat_100g']          !== undefined ? nw['fat_100g']          : null,
-            'saturated-fat':nw['saturated-fat_100g']!== undefined ? nw['saturated-fat_100g']: null,
-            'carbohydrates':nw['carbohydrates_100g'] !== undefined ? nw['carbohydrates_100g']: null,
-            'sugars':       nw['sugars_100g']       !== undefined ? nw['sugars_100g']       : null,
-            'fiber':        nw['fiber_100g']        !== undefined ? nw['fiber_100g']        : null,
-            'proteins':     nw['proteins_100g']     !== undefined ? nw['proteins_100g']     : null,
-            'salt':         nw['salt_100g']         !== undefined ? nw['salt_100g']         : null,
+            'fat': nw['fat_100g'] !== undefined ? nw['fat_100g'] : null,
+            'saturated-fat': nw['saturated-fat_100g'] !== undefined ? nw['saturated-fat_100g'] : null,
+            'carbohydrates': nw['carbohydrates_100g'] !== undefined ? nw['carbohydrates_100g'] : null,
+            'sugars': nw['sugars_100g'] !== undefined ? nw['sugars_100g'] : null,
+            'fiber': nw['fiber_100g'] !== undefined ? nw['fiber_100g'] : null,
+            'proteins': nw['proteins_100g'] !== undefined ? nw['proteins_100g'] : null,
+            'salt': nw['salt_100g'] !== undefined ? nw['salt_100g'] : null,
             isFallback: true
         };
     }
@@ -399,13 +440,13 @@ function getNutritionPerPortion(recipe) {
     return {
         'energy-kcal': nw['energy-kcal_100g'] !== undefined
             ? Math.round(nw['energy-kcal_100g'] * gramsPerPortion / 100) : null,
-        'fat':          nw['fat_100g']          !== undefined ? round1(nw['fat_100g']          * gramsPerPortion / 100) : null,
-        'saturated-fat':nw['saturated-fat_100g']!== undefined ? round1(nw['saturated-fat_100g']* gramsPerPortion / 100) : null,
-        'carbohydrates':nw['carbohydrates_100g'] !== undefined ? round1(nw['carbohydrates_100g'] * gramsPerPortion / 100) : null,
-        'sugars':       nw['sugars_100g']       !== undefined ? round1(nw['sugars_100g']       * gramsPerPortion / 100) : null,
-        'fiber':        nw['fiber_100g']        !== undefined ? round1(nw['fiber_100g']        * gramsPerPortion / 100) : null,
-        'proteins':     nw['proteins_100g']     !== undefined ? round1(nw['proteins_100g']     * gramsPerPortion / 100) : null,
-        'salt':         nw['salt_100g']         !== undefined ? round1(nw['salt_100g']         * gramsPerPortion / 100) : null,
+        'fat': nw['fat_100g'] !== undefined ? round1(nw['fat_100g'] * gramsPerPortion / 100) : null,
+        'saturated-fat': nw['saturated-fat_100g'] !== undefined ? round1(nw['saturated-fat_100g'] * gramsPerPortion / 100) : null,
+        'carbohydrates': nw['carbohydrates_100g'] !== undefined ? round1(nw['carbohydrates_100g'] * gramsPerPortion / 100) : null,
+        'sugars': nw['sugars_100g'] !== undefined ? round1(nw['sugars_100g'] * gramsPerPortion / 100) : null,
+        'fiber': nw['fiber_100g'] !== undefined ? round1(nw['fiber_100g'] * gramsPerPortion / 100) : null,
+        'proteins': nw['proteins_100g'] !== undefined ? round1(nw['proteins_100g'] * gramsPerPortion / 100) : null,
+        'salt': nw['salt_100g'] !== undefined ? round1(nw['salt_100g'] * gramsPerPortion / 100) : null,
         isFallback: false
     };
 }
@@ -414,25 +455,50 @@ function updateNutritionDisplay(recipe) {
     const per = getNutritionPerPortion(recipe);
     const fmt = v => (v !== null && v !== undefined) ? v : '—';
 
-    document.getElementById('nw-energy-kcal').textContent  = fmt(per['energy-kcal']);
-    document.getElementById('nw-fat').textContent          = fmt(per['fat']);
-    document.getElementById('nw-saturated-fat').textContent= fmt(per['saturated-fat']);
-    document.getElementById('nw-carbohydrates').textContent= fmt(per['carbohydrates']);
-    document.getElementById('nw-sugars').textContent       = fmt(per['sugars']);
-    document.getElementById('nw-fiber').textContent        = fmt(per['fiber']);
-    document.getElementById('nw-proteins').textContent     = fmt(per['proteins']);
-    document.getElementById('nw-salt').textContent         = fmt(per['salt']);
+    document.getElementById('nw-energy-kcal').textContent = fmt(per['energy-kcal']);
+    document.getElementById('nw-fat').textContent = fmt(per['fat']);
+    document.getElementById('nw-saturated-fat').textContent = fmt(per['saturated-fat']);
+    document.getElementById('nw-carbohydrates').textContent = fmt(per['carbohydrates']);
+    document.getElementById('nw-sugars').textContent = fmt(per['sugars']);
+    document.getElementById('nw-fiber').textContent = fmt(per['fiber']);
+    document.getElementById('nw-proteins').textContent = fmt(per['proteins']);
+    document.getElementById('nw-salt').textContent = fmt(per['salt']);
 }
 
 // ============================================================
 // WEIGHTED NUTRITIONAL ENGINE
 // ============================================================
+function convertIngredientToGrams(menge, einheit, stkInGrams) {
+    if (typeof menge !== 'number' || isNaN(menge)) {
+        menge = parseFloat(menge) || 0;
+    }
+    const u = (einheit || '').trim().toLowerCase();
+    switch (u) {
+        case 'g':
+            return menge;
+        case 'ml':
+            return menge; // 1 ml ≈ 1 g
+        case 'cl':
+            return menge * 10; // 1 cl = 10 ml ≈ 10 g
+        case 'stk.':
+        case 'stk':
+            const factor = parseFloat(stkInGrams) || 100;
+            return menge * factor;
+        case 'tl':
+            return menge * 3; // 1 TL = 3 g
+        case 'el':
+            return menge * 10; // 1 EL = 10 g
+        default:
+            return menge; // Fallback
+    }
+}
+
 function recalculateRecipeNutrition(recipe) {
     if (!recipe.zutaten || recipe.zutaten.length === 0) return;
 
     let totalWeight = 0;
     let hasBarcodedIngredients = false;
-    
+
     // Initialisiere Nährwert-Schnittsummen (pro 100g des fertigen Rezepts)
     const totalNutrients = {
         'energy-kcal_100g': 0,
@@ -444,46 +510,72 @@ function recalculateRecipeNutrition(recipe) {
         'proteins_100g': 0,
         'salt_100g': 0
     };
-    
+
     let weightedScoreSum = 0;
     let scoreWeightTotal = 0;
 
     recipe.zutaten.forEach(z => {
         if (z.naehrwerte) {
             hasBarcodedIngredients = true;
-            const factor = z.menge / 100;
-            totalWeight += z.menge;
-            
+            const grams = convertIngredientToGrams(z.menge, z.einheit, z.stkInGrams);
+            const factor = grams / 100;
+            totalWeight += grams;
+
             for (const key in totalNutrients) {
                 if (z.naehrwerte[key] !== undefined && z.naehrwerte[key] !== null) {
                     totalNutrients[key] += z.naehrwerte[key] * factor;
                 }
             }
-            
+
             if (z.nutriScoreValue !== undefined && z.nutriScoreValue !== null) {
-                weightedScoreSum += z.nutriScoreValue * z.menge;
-                scoreWeightTotal += z.menge;
+                weightedScoreSum += z.nutriScoreValue * grams;
+                scoreWeightTotal += grams;
             }
         }
     });
 
     if (hasBarcodedIngredients) {
         const port = recipe.portionen || 2;
-        
+
         // Berechne Nährwert pro 100g des fertigen Rezepts
         const scaleFactor = totalWeight > 0 ? (totalWeight / 100) : 1;
         recipe.naehrwerte = {};
         for (const key in totalNutrients) {
             recipe.naehrwerte[key] = Math.round((totalNutrients[key] / scaleFactor) * 10) / 10;
         }
-        
-        // Gesamt-Kalorien pro Portion berechnen
+
         recipe.kalorien = Math.round(totalNutrients['energy-kcal_100g'] / port);
-        
+        const kcalEl = document.getElementById('rv-kalorien');
+        if (kcalEl) {
+            kcalEl.textContent = recipe.kalorien;
+        }
+
         // Berechne gewichteten Nutri-Score
         if (scoreWeightTotal > 0) {
             const avgScore = Math.round(weightedScoreSum / scoreWeightTotal);
             recipe.nutriScore = scoreToLetter(avgScore);
+        }
+    }
+}
+
+function recalculateRecipeCost(recipe) {
+    if (!recipe.zutaten || recipe.zutaten.length === 0) return;
+    let totalCost = 0;
+    let hasPricedIngredients = false;
+    
+    recipe.zutaten.forEach(z => {
+        if (z.preisProKg !== undefined && z.preisProKg !== null && z.preisProKg > 0) {
+            hasPricedIngredients = true;
+            const grams = convertIngredientToGrams(z.menge, z.einheit, z.stkInGrams);
+            totalCost += grams * (z.preisProKg / 1000);
+        }
+    });
+    
+    if (hasPricedIngredients) {
+        recipe.kosten = Math.round(totalCost * 100) / 100;
+        const costEl = document.getElementById('rv-kosten');
+        if (costEl) {
+            costEl.textContent = recipe.kosten.toFixed(2);
         }
     }
 }
@@ -518,7 +610,7 @@ function renderPreparationEditor(recipe) {
     const list = document.getElementById('prep-steps-list');
     list.innerHTML = '';
     const structure = parseMarkdownToSteps(recipe.beschreibung || '');
-    
+
     let stepCount = 1;
     structure.forEach((item, index) => {
         const div = document.createElement('div');
@@ -528,7 +620,7 @@ function renderPreparationEditor(recipe) {
             div.innerHTML = `
                 <span class="prep-drag-handle"><i data-feather="menu"></i></span>
                 <h3 class="section-title" contenteditable="true" data-placeholder="Abschnitts-Titel...">${item.text}</h3>
-                <button class="zutat-delete-btn" title="Abschnitt entfernen" onclick="this.parentElement.remove(); triggerAutosave();"><i data-feather="x"></i></button>
+                <button class="zutat-delete-btn" title="Abschnitt entfernen" onclick="this.parentElement.remove(); syncPreparationToMarkdown(); saveCurrentRecipeImmediately();"><i data-feather="x"></i></button>
             `;
         } else {
             div.className = 'prep-step-item' + (item.completed ? ' is-completed' : '');
@@ -537,13 +629,13 @@ function renderPreparationEditor(recipe) {
                 <span class="prep-drag-handle"><i data-feather="menu"></i></span>
                 <span class="step-number" onclick="toggleStepCompleted(this)" title="Status umschalten">${stepCount++}</span>
                 <div class="step-content" contenteditable="true" data-placeholder="Schritt beschreiben...">${item.text}</div>
-                <button class="zutat-delete-btn" title="Schritt entfernen" onclick="this.parentElement.remove(); triggerAutosave();"><i data-feather="x"></i></button>
+                <button class="zutat-delete-btn" title="Schritt entfernen" onclick="this.parentElement.remove(); syncPreparationToMarkdown(); saveCurrentRecipeImmediately();"><i data-feather="x"></i></button>
             `;
         }
         list.appendChild(div);
     });
     if (typeof feather !== 'undefined') feather.replace();
-    
+
     const box = document.querySelector('.zubereitung-box');
     const isEditing = box && box.classList.contains('is-editing');
 
@@ -557,7 +649,7 @@ function renderPreparationEditor(recipe) {
             disabled: !isEditing, // Nur wenn im Edit-Modus aktiv
             onEnd: () => {
                 syncPreparationToMarkdown();
-                triggerAutosave();
+                saveCurrentRecipeImmediately();
                 renderPreparationEditor(currentRecipe); // Re-render um Nummern zu korrigieren
             }
         });
@@ -573,7 +665,7 @@ function toggleStepCompleted(el) {
     const parent = el.parentElement;
     parent.classList.toggle('is-completed');
     syncPreparationToMarkdown();
-    triggerAutosave();
+    saveCurrentRecipeImmediately();
 }
 
 function syncPreparationToMarkdown() {
@@ -583,7 +675,7 @@ function syncPreparationToMarkdown() {
         const title = node.querySelector('.section-title');
         const content = node.querySelector('.step-content');
         const isCompleted = node.classList.contains('is-completed');
-        
+
         if (title) {
             md += `\n## ${title.textContent.trim()}\n`;
         } else if (content) {
@@ -599,8 +691,8 @@ function addPrepStep() {
     syncPreparationToMarkdown();
     currentRecipe.beschreibung += '\n- [ ] ';
     renderPreparationEditor(currentRecipe);
-    triggerAutosave();
-    
+    saveCurrentRecipeImmediately();
+
     // Focus auf das letzte Element
     setTimeout(() => {
         const items = document.querySelectorAll('.prep-step-item .step-content');
@@ -612,7 +704,7 @@ function addPrepSection() {
     syncPreparationToMarkdown();
     currentRecipe.beschreibung += '\n## ';
     renderPreparationEditor(currentRecipe);
-    triggerAutosave();
+    saveCurrentRecipeImmediately();
 
     // Focus auf das letzte Element
     setTimeout(() => {
@@ -625,7 +717,7 @@ function deletePrepItem(index) {
     // Diese Funktion wird durch die Inline-Delete-Logik in renderPreparationEditor ersetzt
     syncPreparationToMarkdown();
     renderPreparationEditor(currentRecipe);
-    triggerAutosave();
+    saveCurrentRecipeImmediately();
 }
 
 
@@ -642,23 +734,57 @@ function renderIngredients(zutaten, curPort, basePort) {
         const li = document.createElement('li');
         li.className = 'zutat-item';
         li.onclick = () => openIngredientModal(index);
-        
+
+        li.dataset.index = index;
         if (z.barcode) li.dataset.barcode = z.barcode;
         if (z.naehrwerte) li.dataset.naehrwerte = JSON.stringify(z.naehrwerte);
+        if (z.stkInGrams) li.dataset.stkInGrams = z.stkInGrams;
+        if (z.preisProKg) li.dataset.preisProKg = z.preisProKg;
+
+        // Dynamischer Dropdown-Generator für Einheiten (streng ohne Fallback)
+        const fixedUnits = ["g", "ml", "cl", "Stk.", "TL", "EL"];
+        let selectOptionsHtml = '';
+        fixedUnits.forEach(u => {
+            selectOptionsHtml += `<option value="${u}" ${z.einheit === u ? 'selected' : ''}>${u}</option>`;
+        });
 
         li.innerHTML = `
             <span class="zutat-drag-handle"><i data-feather="menu"></i></span>
             <span class="zutat-menge" contenteditable="true" data-base="${z.menge}" onclick="event.stopPropagation()">${scaledMenge}</span>
-            <span class="zutat-einheit" contenteditable="true" onclick="event.stopPropagation()">${z.einheit}</span>
+            <select class="zutat-einheit-select" onclick="event.stopPropagation()">
+                ${selectOptionsHtml}
+            </select>
             <span class="zutat-name" contenteditable="true" onclick="event.stopPropagation()">${z.name}</span>
             <button class="zutat-delete-btn" title="Zutat entfernen" onclick="event.stopPropagation(); deleteIngredient(${index})"><i data-feather="x"></i></button>
         `;
         list.appendChild(li);
 
-        // Autosave an hängen
-        li.querySelectorAll('[contenteditable="true"]').forEach(el => {
+        // Autosave anhängen für name und menge
+        li.querySelectorAll('.zutat-menge, .zutat-name').forEach(el => {
             el.addEventListener('input', () => triggerAutosave());
         });
+
+        // Event-Listener für Einheitsänderung mit Popup bei Stk.
+        const selectEl = li.querySelector('.zutat-einheit-select');
+        if (selectEl) {
+            selectEl.addEventListener('change', (e) => {
+                const newUnit = e.target.value;
+                if (newUnit === 'Stk.') {
+                    const currentVal = z.stkInGrams || 100;
+                    const weightStr = prompt(`Wie viel Gramm wiegt 1 Stück (Stk.) dieser Zutat ("${z.name || 'Unbenannt'}")?`, currentVal);
+                    const weight = parseFloat(weightStr);
+                    if (!isNaN(weight) && weight > 0) {
+                        z.stkInGrams = weight;
+                        li.dataset.stkInGrams = weight;
+                    } else {
+                        z.stkInGrams = currentVal;
+                        li.dataset.stkInGrams = currentVal;
+                    }
+                }
+                syncIngredientsFromDOM();
+                saveCurrentRecipeImmediately();
+            });
+        }
     });
 
     if (typeof feather !== 'undefined') feather.replace();
@@ -671,7 +797,7 @@ function renderIngredients(zutaten, curPort, basePort) {
             ghostClass: 'sortable-ghost',
             onEnd: () => {
                 syncIngredientsFromDOM();
-                triggerAutosave();
+                saveCurrentRecipeImmediately();
             }
         });
     }
@@ -680,12 +806,27 @@ function renderIngredients(zutaten, curPort, basePort) {
 function syncIngredientsFromDOM() {
     const items = document.querySelectorAll('.zutat-item');
     currentRecipe.zutaten = Array.from(items).map(li => {
+        const selectEl = li.querySelector('.zutat-einheit-select');
+        const unit = selectEl ? selectEl.value : 'g';
+        
+        // Erhalte das bestehende stkInGrams und preisProKg falls vorhanden
+        const indexStr = li.dataset.index || '';
+        const idx = parseInt(indexStr);
+        let existingStkGrams = null;
+        let existingPreisProKg = null;
+        if (!isNaN(idx) && currentRecipe.zutaten[idx]) {
+            existingStkGrams = currentRecipe.zutaten[idx].stkInGrams;
+            existingPreisProKg = currentRecipe.zutaten[idx].preisProKg;
+        }
+
         return {
             menge: parseFloat(li.querySelector('.zutat-menge').textContent) || 0,
-            einheit: li.querySelector('.zutat-einheit').textContent.trim(),
+            einheit: unit,
             name: li.querySelector('.zutat-name').textContent.trim(),
             barcode: li.dataset.barcode || null,
-            naehrwerte: li.dataset.naehrwerte ? JSON.parse(li.dataset.naehrwerte) : null
+            naehrwerte: li.dataset.naehrwerte ? JSON.parse(li.dataset.naehrwerte) : null,
+            stkInGrams: existingStkGrams || parseFloat(li.dataset.stkInGrams) || null,
+            preisProKg: existingPreisProKg || parseFloat(li.dataset.preisProKg) || null
         };
     });
 }
@@ -713,7 +854,7 @@ function loadRecipe(recipe) {
     renderLabels(recipe.labels || []);
 
     // Event Listener für Always-Editable Felder
-    ['rv-titel', 'rv-kurzbeschreibung', 'rv-kalorien', 'rv-kosten', 'rv-dauer'].forEach(id => {
+    ['rv-titel', 'rv-kurzbeschreibung', 'rv-dauer'].forEach(id => {
         const el = document.getElementById(id);
         el.addEventListener('input', () => triggerAutosave());
     });
@@ -725,22 +866,31 @@ function loadRecipe(recipe) {
 // ============================================================
 function triggerAutosave() {
     if (autosaveTimeout) clearTimeout(autosaveTimeout);
-    
+
     // Lokales Update sofort (für UI Konsistenz)
     syncAllToState();
-    
+
     // WICHTIG: Sofort lokal speichern, damit Navigieren (Zurück-Button) oder ein Seiten-Reload
     // die Änderungen (wie neue Labels) nicht vergisst!
     if (currentRecipe && currentRecipe.id) {
         recipes[currentRecipe.id] = currentRecipe;
         localStorage.setItem('recipes_cache', JSON.stringify(recipes));
     }
-    
+
     // Nach 5 Minuten an Firebase senden (Wunsch des Users)
-    // Für besseres Feedback nutzen wir 30s im Hintergrund, aber ich stelle hier 5 Min ein
     autosaveTimeout = setTimeout(() => {
         saveRecipeToFirebase(currentRecipe);
-    }, 5 * 60 * 1000); 
+    }, 5 * 60 * 1000);
+}
+
+function saveCurrentRecipeImmediately() {
+    if (autosaveTimeout) clearTimeout(autosaveTimeout);
+    if (currentRecipe && currentRecipe.id) {
+        syncAllToState();
+        recipes[currentRecipe.id] = currentRecipe;
+        localStorage.setItem('recipes_cache', JSON.stringify(recipes));
+        saveRecipeToFirebase(currentRecipe);
+    }
 }
 
 function syncAllToState() {
@@ -750,12 +900,13 @@ function syncAllToState() {
     currentRecipe.kalorien = parseFloat(document.getElementById('rv-kalorien').textContent) || 0;
     currentRecipe.dauer = parseInt(document.getElementById('rv-dauer').textContent) || 0;
     currentRecipe.kosten = parseFloat(document.getElementById('rv-kosten').textContent) || 0;
-    
+
     syncIngredientsFromDOM();
     syncPreparationToMarkdown();
-    
+
     // Nährwerte neu kalkulieren
     recalculateRecipeNutrition(currentRecipe);
+    recalculateRecipeCost(currentRecipe);
     updateNutritionDisplay(currentRecipe);
 }
 
@@ -777,10 +928,10 @@ function saveManualPortions() {
     basePortion = newVal;
     currentPortion = newVal;
     document.getElementById('rv-portionen').textContent = currentPortion;
-    
+
     updateNutritionDisplay(currentRecipe);
     renderIngredients(currentRecipe.zutaten, currentPortion, basePortion);
-    
+
     closePortionModal();
     saveRecipeToFirebase(currentRecipe);
 }
@@ -793,13 +944,39 @@ function openIngredientModal(index) {
     const z = currentRecipe.zutaten[index];
     document.getElementById('modal-ingredient-name').textContent = z.name;
     document.getElementById('modal-ingredient-barcode').textContent = z.barcode || 'Kein Barcode';
-    
+
     const nw = z.naehrwerte || {};
     document.getElementById('mi-kcal').value = nw['energy-kcal_100g'] || 0;
     document.getElementById('mi-proteins').value = nw['proteins_100g'] || 0;
     document.getElementById('mi-fat').value = nw['fat_100g'] || 0;
     document.getElementById('mi-carbs').value = nw['carbohydrates_100g'] || 0;
+    document.getElementById('mi-saturated-fat').value = nw['saturated-fat_100g'] || 0;
+    document.getElementById('mi-sugars').value = nw['sugars_100g'] || 0;
+    document.getElementById('mi-fiber').value = nw['fiber_100g'] || 0;
+    document.getElementById('mi-salt').value = nw['salt_100g'] || 0;
+    document.getElementById('mi-preis').value = z.preisProKg || 0;
+
+    // Dynamisches Feld für Stückgewicht
+    let stkField = document.getElementById('mi-stk-grams-container');
+    if (!stkField) {
+        const grid = document.querySelector('.modal-nutrition-grid');
+        stkField = document.createElement('div');
+        stkField.id = 'mi-stk-grams-container';
+        stkField.className = 'modal-field';
+        stkField.innerHTML = `
+            <label>Stückgewicht (g)</label>
+            <input type="number" id="mi-stk-grams" step="1">
+        `;
+        grid.appendChild(stkField);
+    }
     
+    if (z.einheit === 'Stk.') {
+        stkField.style.display = 'block';
+        document.getElementById('mi-stk-grams').value = z.stkInGrams || 100;
+    } else {
+        stkField.style.display = 'none';
+    }
+
     document.getElementById('ingredient-detail-modal').style.display = 'flex';
 }
 
@@ -811,23 +988,35 @@ function saveIngredientDetail() {
     if (selectedIngredientIndex < 0) return;
     const z = currentRecipe.zutaten[selectedIngredientIndex];
     if (!z.naehrwerte) z.naehrwerte = {};
-    
+
     z.naehrwerte['energy-kcal_100g'] = parseFloat(document.getElementById('mi-kcal').value) || 0;
     z.naehrwerte['proteins_100g'] = parseFloat(document.getElementById('mi-proteins').value) || 0;
     z.naehrwerte['fat_100g'] = parseFloat(document.getElementById('mi-fat').value) || 0;
     z.naehrwerte['carbohydrates_100g'] = parseFloat(document.getElementById('mi-carbs').value) || 0;
+    z.naehrwerte['saturated-fat_100g'] = parseFloat(document.getElementById('mi-saturated-fat').value) || 0;
+    z.naehrwerte['sugars_100g'] = parseFloat(document.getElementById('mi-sugars').value) || 0;
+    z.naehrwerte['fiber_100g'] = parseFloat(document.getElementById('mi-fiber').value) || 0;
+    z.naehrwerte['salt_100g'] = parseFloat(document.getElementById('mi-salt').value) || 0;
     
+    z.preisProKg = parseFloat(document.getElementById('mi-preis').value) || 0;
+
+    const stkInput = document.getElementById('mi-stk-grams');
+    if (stkInput && z.einheit === 'Stk.') {
+        z.stkInGrams = parseFloat(stkInput.value) || 100;
+    }
+
     closeIngredientModal();
     recalculateRecipeNutrition(currentRecipe);
+    recalculateRecipeCost(currentRecipe);
     updateNutritionDisplay(currentRecipe);
     renderIngredients(currentRecipe.zutaten, currentPortion, basePortion);
-    triggerAutosave();
+    saveCurrentRecipeImmediately();
 }
 
 function deleteIngredient(index) {
     currentRecipe.zutaten.splice(index, 1);
     renderIngredients(currentRecipe.zutaten, currentPortion, basePortion);
-    triggerAutosave();
+    saveCurrentRecipeImmediately();
 }
 
 
@@ -866,7 +1055,7 @@ function addIngredient() {
         name: ''
     });
     renderIngredients(currentRecipe.zutaten, currentPortion, basePortion);
-    
+
     // Focus auf die neue Zutat (Name Feld)
     setTimeout(() => {
         const items = document.querySelectorAll('.zutaten-list .zutat-item');
@@ -876,7 +1065,7 @@ function addIngredient() {
             nameField.focus();
         }
     }, 50);
-    triggerAutosave();
+    saveCurrentRecipeImmediately();
 }
 
 
@@ -928,7 +1117,7 @@ async function startCameraScanner() {
                 if (device.label.toLowerCase().includes('front')) return false;
                 return true;
             });
-            
+
             // Fallback, falls der Filter alles aussortiert (z.B. wenn keine Labels verfügbar sind)
             if (backCameras.length === 0) {
                 backCameras = allDevices.filter(device => device.kind === 'videoinput');
@@ -936,8 +1125,8 @@ async function startCameraScanner() {
             videoDevices = backCameras;
 
             // Finde initial eine gute Linse (kein Ultra-Wide)
-            const preferredIndex = videoDevices.findIndex(d => 
-                !d.label.toLowerCase().includes('ultra') && 
+            const preferredIndex = videoDevices.findIndex(d =>
+                !d.label.toLowerCase().includes('ultra') &&
                 !d.label.toLowerCase().includes('wide')
             );
             if (preferredIndex !== -1) {
@@ -956,14 +1145,14 @@ async function startCameraScanner() {
 
         cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
         video.srcObject = cameraStream;
-        
+
         // Warten bis Metadaten geladen sind um das Video abzuspielen
         await new Promise(resolve => {
             video.onloadedmetadata = () => {
                 resolve();
             };
         });
-        
+
         await video.play();
 
         if (scannerLine) scannerLine.style.display = 'block';
@@ -983,7 +1172,7 @@ async function startCameraScanner() {
 
 async function scanLoop() {
     if (!cameraStream) return;
-    
+
     if (scanCooldown) {
         scannerLoopId = requestAnimationFrame(scanLoop);
         return;
@@ -1002,8 +1191,8 @@ async function scanLoop() {
                 if (barcodes.length > 0) {
                     barcodeFound = barcodes[0].rawValue;
                 }
-            } 
-            
+            }
+
             if (!barcodeFound && window.zxingReadBarcodes) {
                 // Priorität 2: zxing-wasm Fallback (iPad/Safari oder wenn Nativ versagt)
                 const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -1011,11 +1200,11 @@ async function scanLoop() {
                 canvas.height = video.videoHeight;
                 ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
                 const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                
+
                 const results = await window.zxingReadBarcodes(imageData, {
                     tryHarder: true
                 });
-                
+
                 if (results && results.length > 0) {
                     barcodeFound = results[0].text;
                 }
@@ -1025,7 +1214,7 @@ async function scanLoop() {
                 console.log('Barcode erkannt:', barcodeFound);
                 scanCooldown = true;
                 setTimeout(() => { scanCooldown = false; }, 2000);
-                
+
                 // Für Debugging: Barcode in das Suchfeld eintragen, damit der Nutzer sieht, was gelesen wurde
                 const searchInput = document.getElementById('ingredient-search-input');
                 if (searchInput) searchInput.value = barcodeFound;
@@ -1131,14 +1320,14 @@ function addIngredientFromData(cleanBarcode, data) {
     showToast('Hinzugefügt!', displayName);
 
     const naehrwerte = {
-        'energy-kcal_100g':   parseFloat(data['energy-kcal_100g'])   || 0,
-        'fat_100g':           parseFloat(data['fat_100g'])           || 0,
+        'energy-kcal_100g': parseFloat(data['energy-kcal_100g']) || 0,
+        'fat_100g': parseFloat(data['fat_100g']) || 0,
         'saturated-fat_100g': parseFloat(data['saturated-fat_100g']) || 0,
         'carbohydrates_100g': parseFloat(data['carbohydrates_100g']) || 0,
-        'sugars_100g':        parseFloat(data['sugars_100g'])        || 0,
-        'fiber_100g':         parseFloat(data['fiber_100g'])         || 0,
-        'proteins_100g':      parseFloat(data['proteins_100g'])      || 0,
-        'salt_100g':          parseFloat(data['salt_100g'])          || 0
+        'sugars_100g': parseFloat(data['sugars_100g']) || 0,
+        'fiber_100g': parseFloat(data['fiber_100g']) || 0,
+        'proteins_100g': parseFloat(data['proteins_100g']) || 0,
+        'salt_100g': parseFloat(data['salt_100g']) || 0
     };
 
     currentRecipe.zutaten.push({
@@ -1151,7 +1340,7 @@ function addIngredientFromData(cleanBarcode, data) {
     });
 
     renderIngredients(currentRecipe.zutaten, currentPortion, basePortion);
-    triggerAutosave();
+    saveCurrentRecipeImmediately();
 }
 
 
@@ -1190,39 +1379,58 @@ function setupIngredientSearch() {
         resultsEl.style.display = 'block';
 
         try {
-            // Firebase Realtime DB: orderBy child-Feld (erfordert .indexOn: ["product_name"] in Rules)
-            // Suche mit Groß-/Kleinschreibungsvarianten für bessere Trefferquote
-            const cap = rawQuery.charAt(0).toUpperCase() + rawQuery.slice(1);
-            const end = cap + '\uf8ff';
-            const url = `${FIREBASE_URL}/.json` +
-                `?orderBy="product_name"` +
-                `&startAt=${encodeURIComponent(JSON.stringify(cap))}` +
-                `&endAt=${encodeURIComponent(JSON.stringify(end))}` +
-                `&limitToFirst=10`;
+            // 1. Hole lokale Kandidaten
+            const candidates = getFuzzyCandidates();
 
-            const res = await fetch(url);
-
-            // Firebase gibt 400 zurück wenn kein Index existiert
-            if (res.status === 400) {
-                const errText = await res.text();
-                console.warn('Firebase Index fehlt:', errText);
-                resultsEl.innerHTML = '<div class="ingredient-dropdown-item ingredient-dropdown-info">' +
-                    '⚠️ Titelsuche erfordert einen Firebase-Index für <code>product_name</code>. Bitte Barcode scannen.' +
-                    '</div>';
-                resultsEl.style.display = 'block';
-                return;
+            // 2. Hole Firebase-Kandidaten per Präfix der ersten 3 Zeichen
+            const prefixLen = Math.min(3, rawQuery.length);
+            const prefix = rawQuery.slice(0, prefixLen).toLowerCase().replace(/[.#$[\]/]/g, '_');
+            const end = prefix + '\uf8ff';
+            const url = `${FIREBASE_URL}/name_index.json?orderBy="%24key"&startAt=${encodeURIComponent(JSON.stringify(prefix))}&endAt=${encodeURIComponent(JSON.stringify(end))}&limitToFirst=60`;
+            
+            let fbItems = [];
+            try {
+                const res = await fetch(url);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data) {
+                        fbItems = Object.values(data);
+                    }
+                }
+            } catch (err) {
+                console.warn("Firebase-Präfixsuche fehlgeschlagen:", err);
             }
 
-            if (!res.ok) throw new Error('Netzwerkfehler');
+            // 3. Zusammenführen und Duplikate filtern
+            const merged = [...fbItems];
+            const seenNames = new Set(fbItems.map(item => (item.product_name || '').toLowerCase().trim()));
+            
+            candidates.forEach(cand => {
+                const candName = cand.product_name.toLowerCase().trim();
+                if (!seenNames.has(candName)) {
+                    merged.push(cand);
+                    seenNames.add(candName);
+                }
+            });
 
-            const data = await res.json();
-            const items = data
-                ? Object.entries(data).map(([barcode, val]) => ({ barcode, ...val }))
-                : [];
+            // 4. Ähnlichkeit berechnen und sortieren
+            const scored = merged.map(item => {
+                const name = item.product_name || '';
+                const score = getFuzzyMatchScore(name, rawQuery);
+                return { item, score };
+            });
 
-            // In Cache schreiben
-            ingredientSearchCache[cacheKey] = items;
-            renderIngredientResults(items, resultsEl);
+            // Filter auf vernünftige Übereinstimmung (Score >= 0.35)
+            const filtered = scored.filter(entry => entry.score >= 0.35);
+
+            // Sortieren nach Score absteigend
+            filtered.sort((a, b) => b.score - a.score);
+
+            // Nimm die Top 10 Ergebnisse
+            const finalItems = filtered.slice(0, 10).map(entry => entry.item);
+
+            ingredientSearchCache[cacheKey] = finalItems;
+            renderIngredientResults(finalItems, resultsEl);
 
         } catch (err) {
             console.error('Ingredient search error:', err);
@@ -1276,9 +1484,9 @@ function renderIngredientResults(items, resultsEl) {
 function renderRecipesList() {
     const listContainer = document.getElementById('recipes-list-container');
     if (!listContainer) return;
-    
+
     listContainer.innerHTML = '';
-    
+
     const keys = Object.keys(recipes);
     if (keys.length === 0) {
         listContainer.innerHTML = `
@@ -1288,47 +1496,55 @@ function renderRecipesList() {
         `;
         return;
     }
-    
+
     keys.forEach((key, index) => {
         const recipe = recipes[key];
-        
+
         // Bento Grid Größenverteilung
         let sizeClass = 'size-sm';
         if (index === 0) sizeClass = 'size-lg';
         else if (index === 3) sizeClass = 'size-md';
-        
+
         const card = document.createElement('div');
         card.className = `recipe-card ${sizeClass}`;
         card.dataset.id = recipe.id;
-        
+
         let imgHtml = '';
         if (sizeClass === 'size-lg') {
             imgHtml = `<div class="recipe-card-img placeholder-img"></div>`;
         }
-        
+
         const badgeHtml = index === 0 ? `<div class="recipe-badge">Beliebt</div>` : '';
-        
+
+        // Label Badges
+        let labelsHtml = '';
+        if (recipe.labels && recipe.labels.length > 0) {
+            labelsHtml = `<div class="card-labels">` +
+                recipe.labels.map(l => `<span class="card-label-badge">${l}</span>`).join('') +
+                `</div>`;
+        }
+
         card.innerHTML = `
             ${badgeHtml}
             ${imgHtml}
             <div class="recipe-card-info">
+                ${labelsHtml}
                 <h3>${recipe.titel}</h3>
                 <p>${recipe.kurzbeschreibung}</p>
                 <span class="recipe-meta">
                     <i data-feather="clock"></i> ${recipe.dauer} Min. &bull; 🔥 ${recipe.kalorien} kcal
-                    &bull; ⭐ ${(4.6 + (index % 5) * 0.1).toFixed(1)}
                 </span>
             </div>
         `;
-        
+
         card.addEventListener('click', () => {
             addToRecent(recipe.id);
             showRecipeView(recipe);
         });
-        
+
         listContainer.appendChild(card);
     });
-    
+
     if (typeof feather !== 'undefined') {
         feather.replace();
     }
@@ -1348,38 +1564,47 @@ function addToRecent(id) {
 function updateRecentList() {
     const recentContainer = document.querySelector('.recent-list');
     if (!recentContainer) return;
-    
+
     recentContainer.innerHTML = '';
-    
+
     if (recentRecipeIds.length === 0) {
         const saved = localStorage.getItem('recent_recipes');
         if (saved) {
             recentRecipeIds = JSON.parse(saved);
         }
     }
-    
+
     let idsToRender = recentRecipeIds;
     if (idsToRender.length === 0) {
         idsToRender = Object.keys(recipes).slice(0, 3);
     }
-    
+
     idsToRender.forEach(id => {
         const recipe = recipes[id];
         if (!recipe) return;
-        
+
+        let labelsHtml = '';
+        if (recipe.labels && recipe.labels.length > 0) {
+            labelsHtml = `<div class="card-labels">` +
+                recipe.labels.map(l => `<span class="card-label-badge">${l}</span>`).join('') +
+                `</div>`;
+        }
+
         const item = document.createElement('div');
         item.className = 'recent-item';
         item.dataset.id = recipe.id;
         item.innerHTML = `
-            <div class="recent-img placeholder-img"></div>
-            <span>${recipe.titel}</span>
+            <div class="recent-info">
+                <span class="recent-title">${recipe.titel}</span>
+                ${labelsHtml}
+            </div>
         `;
-        
+
         item.addEventListener('click', () => {
             addToRecent(recipe.id);
             showRecipeView(recipe);
         });
-        
+
         recentContainer.appendChild(item);
     });
 }
@@ -1391,34 +1616,35 @@ function setupSearch() {
     const searchInput = document.getElementById('recipe-search');
     const searchResults = document.getElementById('search-results');
     if (!searchInput || !searchResults) return;
-    
+
     // Klone das Element um Event Listener Duplikate zu verhindern
     const newSearchInput = searchInput.cloneNode(true);
     searchInput.replaceWith(newSearchInput);
-    
+
     // Debounce die Suche auf 200ms um Tipp-Verzögerungen komplett zu eliminieren!
     const performSearch = debounce((query) => {
         searchResults.innerHTML = '';
-        
+
         if (query.length > 0) {
-            const matches = Object.values(recipes).filter(r => 
-                r.titel.toLowerCase().includes(query) || 
-                r.kurzbeschreibung.toLowerCase().includes(query)
+            const matches = Object.values(recipes).filter(r =>
+                r.titel.toLowerCase().includes(query) ||
+                r.kurzbeschreibung.toLowerCase().includes(query) ||
+                (r.labels && r.labels.some(l => l.toLowerCase().includes(query)))
             );
-            
+
             if (matches.length > 0) {
                 matches.forEach(recipe => {
                     const item = document.createElement('div');
                     item.className = 'dropdown-item';
                     item.innerHTML = `<i data-feather="file-text" style="width:16px;height:16px;color:var(--text-muted)"></i><span>${recipe.titel}</span>`;
-                    
+
                     item.addEventListener('click', () => {
                         newSearchInput.value = '';
                         searchResults.style.display = 'none';
                         addToRecent(recipe.id);
                         showRecipeView(recipe);
                     });
-                    
+
                     searchResults.appendChild(item);
                 });
                 if (typeof feather !== 'undefined') feather.replace();
@@ -1435,7 +1661,7 @@ function setupSearch() {
     newSearchInput.addEventListener('input', (e) => {
         performSearch(e.target.value.toLowerCase().trim());
     });
-    
+
     document.addEventListener('click', (e) => {
         if (!newSearchInput.contains(e.target) && !searchResults.contains(e.target)) {
             searchResults.style.display = 'none';
@@ -1447,14 +1673,31 @@ function setupSearch() {
 // NAVIGATION LAYOUT CONTROLLER
 // ============================================================
 function showView(id) {
+    const currentActiveView = ['main-view', 'recipes-view', 'recipe-view'].find(v => {
+        const el = document.getElementById(v);
+        return el && getComputedStyle(el).display !== 'none';
+    });
+    if (currentActiveView && currentActiveView !== id) {
+        previousView = currentActiveView;
+    }
+
     ['main-view', 'recipes-view', 'recipe-view'].forEach(v => {
         document.getElementById(v).style.display = (v === id) ? 'block' : 'none';
     });
     window.scrollTo({ top: 0, behavior: 'instant' });
     if (typeof feather !== 'undefined') feather.replace();
+
+    // Re-render lists when returning to dashboard or overview to show latest labels/titles
+    if (id === 'recipes-view') {
+        renderRecipesList();
+    } else if (id === 'main-view') {
+        updateRecentList();
+    }
 }
 
-function showRecipeView(recipe) {
+function showRecipeView(recipeOrId) {
+    const id = (recipeOrId && typeof recipeOrId === 'object') ? recipeOrId.id : recipeOrId;
+    const recipe = recipes[id] || recipeOrId;
     showView('recipe-view');
     loadRecipe(recipe);
 }
@@ -1470,13 +1713,26 @@ document.addEventListener('DOMContentLoaded', () => {
     // Hub-Navigation
     document.getElementById('btn-scan')?.addEventListener('click', () => alert('Kassenzettel scannen steht erst in der Pro-Version zur Verfügung.'));
     document.getElementById('btn-new-recipe')?.addEventListener('click', createNewRecipe);
-    
+
     document.getElementById('box-recipes')?.addEventListener('click', (e) => {
         if (!e.target.closest('#recipe-search') && !e.target.closest('#search-results')) showView('recipes-view');
     });
 
-    document.getElementById('btn-back-home')?.addEventListener('click', () => showView('main-view'));
-    document.getElementById('btn-back-from-recipe')?.addEventListener('click', () => showView('recipes-view'));
+    document.getElementById('btn-back-home')?.addEventListener('click', () => {
+        saveCurrentRecipeImmediately();
+        showView('main-view');
+    });
+    document.getElementById('btn-back-from-recipe')?.addEventListener('click', () => {
+        saveCurrentRecipeImmediately();
+        showView(previousView);
+    });
+
+    window.addEventListener('pagehide', () => {
+        saveCurrentRecipeImmediately();
+    });
+    window.addEventListener('beforeunload', () => {
+        saveCurrentRecipeImmediately();
+    });
 
     // Rezept-Detail Actions
     document.getElementById('btn-delete-recipe')?.addEventListener('click', () => {
@@ -1485,7 +1741,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-portion-settings')?.addEventListener('click', openPortionModal);
     document.getElementById('btn-close-portion-modal')?.addEventListener('click', closePortionModal);
     document.getElementById('btn-save-portions')?.addEventListener('click', saveManualPortions);
-    
+
     document.getElementById('btn-close-ingredient-modal')?.addEventListener('click', closeIngredientModal);
     document.getElementById('btn-save-ingredient-detail')?.addEventListener('click', saveIngredientDetail);
     document.getElementById('btn-delete-ingredient-detail')?.addEventListener('click', () => {
@@ -1510,7 +1766,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Ingredient Actions (New)
     document.getElementById('btn-add-ingredient-manual')?.addEventListener('click', addIngredient);
-    
+
     // Ingredient Search & Barcode
     setupInlineIngredientSearch();
     setupLabelSearch();
@@ -1530,7 +1786,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Stepper
     document.getElementById('btn-portion-up')?.addEventListener('click', () => updatePortions(currentPortion + 1));
     document.getElementById('btn-portion-down')?.addEventListener('click', () => updatePortions(currentPortion - 1));
-    
+
     document.getElementById('btn-bring')?.addEventListener('click', () => alert('🛒 Wird zur Bring!-Liste hinzugefügt…'));
 });
 
@@ -1568,30 +1824,151 @@ function updatePortions(newPort) {
     updateNutritionDisplay(currentRecipe); // Nährwerte skalieren automatisch im Display
 }
 
+// ============================================================
+// FUZZY SEARCH UTILITIES FOR TYPO-TOLERANCE
+// ============================================================
+const COMMON_INGREDIENTS = [
+    "Apfel", "Apfelmus", "Apfelsaft", "Banane", "Birne", "Erdbeeren", "Himbeeren", "Heidelbeeren", "Zitrone", "Orange",
+    "Karotten", "Zwiebel", "Knoblauch", "Kartoffeln", "Tomaten", "Gurke", "Paprika", "Brokkoli", "Blumenkohl", "Spinat",
+    "Zucchini", "Champignons", "Ingwer", "Erbsen", "Mais", "Salat", "Zucker", "Puderzucker", "Salz", "Pfeffer",
+    "Olivenöl", "Rapsöl", "Sonnenblumenöl", "Butter", "Margarine", "Milch", "H-Milch", "Hafermilch", "Mandelmilch", "Sojamilch",
+    "Sahne", "Schmand", "Saure Sahne", "Creme Fraiche", "Frischkäse", "Quark", "Magerquark", "Joghurt", "Naturjoghurt", "Griechischer Joghurt",
+    "Käse", "Gouda", "Parmesan", "Mozzarella", "Feta", "Ei", "Eier", "Mehl", "Weizenmehl", "Dinkelmehl", "Vollkornmehl",
+    "Haferflocken", "Zartblatt Haferflocken", "Reis", "Basmatireis", "Jasminreis", "Nudeln", "Spaghetti", "Penne", "Fusilli",
+    "Tomatenmark", "Gehackte Tomaten", "Passierte Tomaten", "Gemüsebrühe", "Rinderbrühe", "Hühnerbrühe", "Senf", "Ketchup", "Mayonnaise",
+    "Essig", "Balsamico", "Apfelessig", "Honig", "Ahornsirup", "Hefe", "Backpulver", "Vanillezucker", "Zimt", "Oregano",
+    "Basilikum", "Petersilie", "Schnittlauch", "Thymian", "Rosmarin", "Kakaopulver", "Schokolade", "Mandeln", "Walnüsse",
+    "Cashewkerne", "Erdnüsse", "Kichererbsen", "Linsen", "Rote Linsen", "Bohnen", "Kidneybohnen", "Tofu", "Hähnchenbrust",
+    "Hackfleisch", "Gemischtes Hackfleisch", "Rinderhackfleisch", "Lachs", "Thunfisch", "Schinken", "Speck", "Salami"
+];
+
+function getUniqueIngredientsFromRecipes() {
+    const list = new Set();
+    if (typeof recipes === 'object' && recipes !== null) {
+        Object.values(recipes).forEach(r => {
+            if (r && r.zutaten && Array.isArray(r.zutaten)) {
+                r.zutaten.forEach(z => {
+                    if (z && z.name) list.add(z.name);
+                });
+            }
+        });
+    }
+    return Array.from(list);
+}
+
+function getFuzzyMatchScore(s1, s2) {
+    s1 = s1.toLowerCase().trim();
+    s2 = s2.toLowerCase().trim();
+    if (s1 === s2) return 1.0;
+    
+    // Substring bonus
+    if (s1.includes(s2) || s2.includes(s1)) {
+        return 0.8 + (Math.min(s1.length, s2.length) / Math.max(s1.length, s2.length)) * 0.19;
+    }
+    
+    // Levenshtein
+    const track = Array(s2.length + 1).fill(null).map(() => Array(s1.length + 1).fill(null));
+    for (let i = 0; i <= s1.length; i += 1) track[0][i] = i;
+    for (let j = 0; j <= s2.length; j += 1) track[j][0] = j;
+    for (let j = 1; j <= s2.length; j += 1) {
+        for (let i = 1; i <= s1.length; i += 1) {
+            const indicator = s1[i - 1] === s2[j - 1] ? 0 : 1;
+            track[j][i] = Math.min(
+                track[j][i - 1] + 1,
+                track[j - 1][i] + 1,
+                track[j - 1][i - 1] + indicator
+            );
+        }
+    }
+    const distance = track[s2.length][s1.length];
+    const maxLength = Math.max(s1.length, s2.length);
+    return 1.0 - (distance / maxLength);
+}
+
+function getFuzzyCandidates() {
+    const list = new Set(COMMON_INGREDIENTS);
+    getUniqueIngredientsFromRecipes().forEach(name => list.add(name));
+    
+    return Array.from(list).map(name => {
+        return {
+            product_name: name,
+            brands: "",
+            barcode: "manual-" + encodeURIComponent(name.toLowerCase()),
+            'energy-kcal_100g': null
+        };
+    });
+}
+
 function setupInlineIngredientSearch() {
     const input = document.getElementById('inline-ingredient-search');
     const resultsEl = document.getElementById('inline-search-results');
     if (!input || !resultsEl) return;
 
-    const doSearch = debounce(async (query) => {
-        if (query.length < 2) { resultsEl.style.display = 'none'; return; }
-        
-        const cacheKey = query.toLowerCase();
+    const doSearch = debounce(async (rawQuery) => {
+        if (rawQuery.length < 2) { resultsEl.style.display = 'none'; return; }
+
+        const cacheKey = rawQuery.toLowerCase();
         if (ingredientSearchCache[cacheKey]) {
             renderInlineResults(ingredientSearchCache[cacheKey], resultsEl);
             return;
         }
 
         try {
-            const q = query.toLowerCase().replace(/[.#$[\]/]/g, '_');
-            const end = q + '\uf8ff';
-            const url = `${FIREBASE_URL}/name_index.json?orderBy="%24key"&startAt=${encodeURIComponent(JSON.stringify(q))}&endAt=${encodeURIComponent(JSON.stringify(end))}&limitToFirst=8`;
-            const res = await fetch(url);
-            const data = await res.json();
-            const items = data ? Object.values(data) : [];
-            ingredientSearchCache[cacheKey] = items;
-            renderInlineResults(items, resultsEl);
-        } catch (err) { console.error(err); }
+            // 1. Hole lokale Kandidaten
+            const candidates = getFuzzyCandidates();
+
+            // 2. Hole Firebase-Kandidaten per Präfix der ersten 3 Zeichen
+            const prefixLen = Math.min(3, rawQuery.length);
+            const prefix = rawQuery.slice(0, prefixLen).toLowerCase().replace(/[.#$[\]/]/g, '_');
+            const end = prefix + '\uf8ff';
+            const url = `${FIREBASE_URL}/name_index.json?orderBy="%24key"&startAt=${encodeURIComponent(JSON.stringify(prefix))}&endAt=${encodeURIComponent(JSON.stringify(end))}&limitToFirst=60`;
+            
+            let fbItems = [];
+            try {
+                const res = await fetch(url);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data) {
+                        fbItems = Object.values(data);
+                    }
+                }
+            } catch (err) {
+                console.warn("Firebase-Präfixsuche fehlgeschlagen:", err);
+            }
+
+            // 3. Zusammenführen und Duplikate filtern
+            const merged = [...fbItems];
+            const seenNames = new Set(fbItems.map(item => (item.product_name || '').toLowerCase().trim()));
+            
+            candidates.forEach(cand => {
+                const candName = cand.product_name.toLowerCase().trim();
+                if (!seenNames.has(candName)) {
+                    merged.push(cand);
+                    seenNames.add(candName);
+                }
+            });
+
+            // 4. Ähnlichkeit berechnen und sortieren
+            const scored = merged.map(item => {
+                const name = item.product_name || '';
+                const score = getFuzzyMatchScore(name, rawQuery);
+                return { item, score };
+            });
+
+            // Filter auf vernünftige Übereinstimmung (Score >= 0.35)
+            const filtered = scored.filter(entry => entry.score >= 0.35);
+
+            // Sortieren nach Score absteigend
+            filtered.sort((a, b) => b.score - a.score);
+
+            // Nimm die Top 8 Ergebnisse
+            const finalItems = filtered.slice(0, 8).map(entry => entry.item);
+
+            ingredientSearchCache[cacheKey] = finalItems;
+            renderInlineResults(finalItems, resultsEl);
+        } catch (err) { 
+            console.error("Fuzzy-Zutatensuche Fehler:", err); 
+        }
     }, 250);
 
     input.addEventListener('input', (e) => doSearch(e.target.value.trim()));
@@ -1600,7 +1977,7 @@ function setupInlineIngredientSearch() {
 
 function renderInlineResults(items, resultsEl) {
     resultsEl.innerHTML = '';
-    
+
     // Bestehende Treffer anzeigen
     items.forEach(item => {
         const div = document.createElement('div');
@@ -1620,14 +1997,14 @@ function renderInlineResults(items, resultsEl) {
     manualDiv.style.borderTop = '1px solid #f1f5f9';
     manualDiv.style.color = 'var(--accent-blue)';
     manualDiv.style.fontWeight = '700';
-    manualDiv.innerHTML = `<i data-feather="plus-circle" style="width:14px;height:14px;margin-right:6px;vertical-align:middle;"></i> Manuell hinzufügen`;
+    manualDiv.innerHTML = `<i data-feather="plus-circle" style="width:14px;height:14px;margin-right:6px;vertical-align:middle;"></i> hinzufügen`;
     manualDiv.addEventListener('click', () => {
         resultsEl.style.display = 'none';
         document.getElementById('inline-ingredient-search').value = '';
         addIngredient();
     });
     resultsEl.appendChild(manualDiv);
-    
+
     if (typeof feather !== 'undefined') feather.replace();
     resultsEl.style.display = 'block';
 }
@@ -1638,9 +2015,9 @@ function renderInlineResults(items, resultsEl) {
 // Kein Firebase-Index in den Regeln nötig!
 // ============================================================
 function setupStandaloneSearch() {
-    const input     = document.getElementById('standalone-search-input');
+    const input = document.getElementById('standalone-search-input');
     const resultsEl = document.getElementById('standalone-search-results');
-    const spinner   = document.getElementById('search-modal-spinner');
+    const spinner = document.getElementById('search-modal-spinner');
     if (!input || !resultsEl) return;
 
     // Event-Listener nur einmal binden (Clone-Trick)
@@ -1666,13 +2043,13 @@ function setupStandaloneSearch() {
         try {
             // Firebase $key-Ordering — kein .indexOn nötig!
             // Key-Format: "{normalisierter_name}|{barcode}"
-            const q   = rawQuery.toLowerCase().replace(/[.#$[\]/]/g, '_');
+            const q = rawQuery.toLowerCase().replace(/[.#$[\]/]/g, '_');
             const end = q + '\uf8ff';
             const url = `${FIREBASE_URL}/name_index.json` +
-                        `?orderBy=%22%24key%22` +
-                        `&startAt=${encodeURIComponent(JSON.stringify(q))}` +
-                        `&endAt=${encodeURIComponent(JSON.stringify(end))}` +
-                        `&limitToFirst=12`;
+                `?orderBy=%22%24key%22` +
+                `&startAt=${encodeURIComponent(JSON.stringify(q))}` +
+                `&endAt=${encodeURIComponent(JSON.stringify(end))}` +
+                `&limitToFirst=12`;
 
             const res = await fetch(url);
             spinner.style.display = 'none';
@@ -1705,11 +2082,11 @@ function renderStandaloneResults(items, resultsEl) {
         return;
     }
     items.forEach(item => {
-        const div   = document.createElement('div');
+        const div = document.createElement('div');
         div.className = 'ingredient-dropdown-item';
-        const brand = item.brands  ? `<span class="ingredient-dropdown-brand">${item.brands}</span>` : '';
-        const kcal  = item['energy-kcal_100g'] != null
-                      ? `<span class="ingredient-dropdown-kcal">${item['energy-kcal_100g']} kcal</span>` : '';
+        const brand = item.brands ? `<span class="ingredient-dropdown-brand">${item.brands}</span>` : '';
+        const kcal = item['energy-kcal_100g'] != null
+            ? `<span class="ingredient-dropdown-kcal">${item['energy-kcal_100g']} kcal</span>` : '';
         div.innerHTML = `<span class="ingredient-dropdown-name">${item.product_name || '?'}</span>${brand}${kcal}`;
         div.addEventListener('click', () => {
             resultsEl.style.display = 'none';
@@ -1727,17 +2104,17 @@ function renderStandaloneResults(items, resultsEl) {
 // ============================================================
 async function deleteRecipe(recipeId) {
     if (!confirm("Bist du dir sicher, dass du das Rezept löschen willst?")) return;
-    
+
     try {
         delete recipes[recipeId];
         localStorage.setItem('recipes_cache', JSON.stringify(recipes));
-        
+
         const response = await fetch(`${FIREBASE_URL}/recipes/${recipeId}.json`, {
             method: 'DELETE'
         });
-        
+
         if (!response.ok) throw new Error("Fehler beim Löschen");
-        
+
         showToast("Gelöscht", "Rezept wurde gelöscht.", false);
         showView('recipes-view');
         renderRecipesList();
@@ -1754,9 +2131,9 @@ function renderLabels(labels) {
     const container = document.getElementById('rv-labels-list');
     if (!container) return;
     container.innerHTML = '';
-    
+
     if (!currentRecipe.labels) currentRecipe.labels = [];
-    
+
     labels.forEach((label) => {
         const chip = document.createElement('div');
         chip.className = 'label-chip';
@@ -1775,18 +2152,19 @@ async function addLabelToRecipe(labelName) {
     if (!labelName) return;
     const cleanLabel = labelName.trim();
     if (!cleanLabel) return;
-    
+
     if (!currentRecipe.labels) currentRecipe.labels = [];
     if (!currentRecipe.labels.includes(cleanLabel)) {
         currentRecipe.labels.push(cleanLabel);
         renderLabels(currentRecipe.labels);
-        triggerAutosave();
-        
+        saveCurrentRecipeImmediately();
+
         if (!allLabels.includes(cleanLabel)) {
             allLabels.push(cleanLabel);
+            localStorage.setItem('global_labels', JSON.stringify(allLabels));
             // Save to Firebase globally
             const key = cleanLabel.replace(/[.#$[\]/]/g, '_');
-            fetch(`${FIREBASE_URL}/labels/${key}.json`, {
+            fetch(`${FIREBASE_URL}/labels/${encodeURIComponent(key)}.json`, {
                 method: 'PUT',
                 body: JSON.stringify(cleanLabel)
             }).catch(e => console.error("Fehler beim Speichern des globalen Labels", e));
@@ -1798,7 +2176,7 @@ function removeLabelFromRecipe(labelName) {
     if (!currentRecipe || !currentRecipe.labels) return;
     currentRecipe.labels = currentRecipe.labels.filter(l => l !== labelName);
     renderLabels(currentRecipe.labels);
-    triggerAutosave();
+    saveCurrentRecipeImmediately();
 }
 
 function setupLabelSearch() {
@@ -1812,14 +2190,14 @@ function setupLabelSearch() {
             resultsEl.style.display = 'none';
             return;
         }
-        
+
         resultsEl.innerHTML = '';
         const matches = allLabels.filter(l => l.toLowerCase().includes(val));
-        
+
         matches.forEach(item => {
             const div = document.createElement('div');
             div.className = 'ingredient-dropdown-item';
-            div.textContent = item;
+            div.innerHTML = `<span class="ingredient-dropdown-name">${item}</span>`;
             div.addEventListener('click', () => {
                 resultsEl.style.display = 'none';
                 input.value = '';
@@ -1827,7 +2205,7 @@ function setupLabelSearch() {
             });
             resultsEl.appendChild(div);
         });
-        
+
         // Neu hinzufügen Option
         const exactMatch = allLabels.find(l => l.toLowerCase() === val);
         if (!exactMatch) {
@@ -1836,16 +2214,16 @@ function setupLabelSearch() {
             manualDiv.style.borderTop = '1px solid #f1f5f9';
             manualDiv.style.color = 'var(--accent-blue)';
             manualDiv.style.fontWeight = '700';
-            manualDiv.innerHTML = `<i data-feather="plus-circle" style="width:14px;height:14px;margin-right:6px;vertical-align:middle;"></i> Manuell hinzufügen`;
+            manualDiv.innerHTML = `<i data-feather="plus-circle" style="width:14px;height:14px;margin-right:6px;vertical-align:middle;"></i> hinzufügen`;
             manualDiv.addEventListener('click', () => {
                 resultsEl.style.display = 'none';
-                const newLabel = e.target.value.trim();
+                const newLabelValue = input.value.trim();
                 input.value = '';
-                addLabelToRecipe(newLabel);
+                addLabelToRecipe(newLabelValue);
             });
             resultsEl.appendChild(manualDiv);
         }
-        
+
         if (typeof feather !== 'undefined') feather.replace();
         resultsEl.style.display = 'block';
     });
