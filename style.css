@@ -1970,6 +1970,20 @@ body {
     font-family: inherit;
     font-weight: 600;
     outline: none;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* Hide spin buttons / spinners in number inputs inside modals */
+.modal-field input[type=number]::-webkit-outer-spin-button,
+.modal-field input[type=number]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.modal-field input[type=number] {
+    -moz-appearance: textfield;
+    appearance: textfield;
 }
 
 .modal-field input:focus {

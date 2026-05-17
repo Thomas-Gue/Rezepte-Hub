@@ -954,7 +954,12 @@ function openIngredientModal(index) {
     document.getElementById('mi-sugars').value = nw['sugars_100g'] || 0;
     document.getElementById('mi-fiber').value = nw['fiber_100g'] || 0;
     document.getElementById('mi-salt').value = nw['salt_100g'] || 0;
-    document.getElementById('mi-preis').value = z.preisProKg || 0;
+    const qty = parseFloat(z.product_quantity) || 0;
+    document.getElementById('mi-product-quantity').value = qty || '';
+
+    const convQty = qty > 0 ? qty : 1000;
+    const packagePrice = (z.preisProKg || 0) * (convQty / 1000);
+    document.getElementById('mi-preis').value = packagePrice ? packagePrice.toFixed(2) : '0';
 
     // Dynamisches Feld für Stückgewicht
     let stkField = document.getElementById('mi-stk-grams-container');
@@ -998,7 +1003,12 @@ function saveIngredientDetail() {
     z.naehrwerte['fiber_100g'] = parseFloat(document.getElementById('mi-fiber').value) || 0;
     z.naehrwerte['salt_100g'] = parseFloat(document.getElementById('mi-salt').value) || 0;
 
-    z.preisProKg = parseFloat(document.getElementById('mi-preis').value) || 0;
+    const qty = parseFloat(document.getElementById('mi-product-quantity').value) || 0;
+    z.product_quantity = qty > 0 ? qty : null;
+
+    const packagePrice = parseFloat(document.getElementById('mi-preis').value) || 0;
+    const convQty = qty > 0 ? qty : 1000;
+    z.preisProKg = (packagePrice / convQty) * 1000;
 
     const stkInput = document.getElementById('mi-stk-grams');
     if (stkInput && z.einheit === 'Stk.') {
@@ -1336,7 +1346,9 @@ function addIngredientFromData(cleanBarcode, data) {
         name: title,
         barcode: cleanBarcode,
         naehrwerte: naehrwerte,
-        nutriScoreValue: data.nutriScoreValue || null
+        nutriScoreValue: data.nutriScoreValue || null,
+        product_quantity: parseFloat(data.product_quantity) || null,
+        preisProKg: parseFloat(data.preisProKg) || null
     });
 
     renderIngredients(currentRecipe.zutaten, currentPortion, basePortion);
