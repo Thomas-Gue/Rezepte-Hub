@@ -419,45 +419,49 @@
         <div class="modal-content" style="max-width: 440px;">
             <button class="modal-close-btn" id="btn-close-ingredient-modal">&times;</button>
             <h2 id="modal-ingredient-name">Zutat Details</h2>
-            <p class="modal-subtitle" id="modal-ingredient-barcode" style="font-family: monospace;"></p>
+            <p class="modal-subtitle">Nährwerte und Preiseigenschaften anpassen</p>
 
             <div class="modal-nutrition-grid"
                 style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 20px;">
+                <div class="modal-field" style="grid-column: 1 / -1; margin-bottom: 4px;">
+                    <label>Barcode / EAN</label>
+                    <input type="text" id="mi-barcode" placeholder="Kein Barcode">
+                </div>
                 <!-- Nährwerte der Zutat pro 100g editierbar -->
                 <div class="modal-field">
-                    <label>kcal / 100g</label>
+                    <label>kcal / 100<span>g</span></label>
                     <input type="number" id="mi-kcal" step="0.1">
                 </div>
                 <div class="modal-field">
-                    <label>Eiweiß / 100g</label>
+                    <label>Eiweiß / 100<span>g</span></label>
                     <input type="number" id="mi-proteins" step="0.1">
                 </div>
                 <div class="modal-field">
-                    <label>Fett / 100g</label>
+                    <label>Fett / 100<span>g</span></label>
                     <input type="number" id="mi-fat" step="0.1">
                 </div>
                 <div class="modal-field">
-                    <label>Kohlenh. / 100g</label>
+                    <label>Kohlenh. / 100<span>g</span></label>
                     <input type="number" id="mi-carbs" step="0.1">
                 </div>
                 <div class="modal-field">
-                    <label>Ges. Fetts. / 100g</label>
+                    <label>Ges. Fetts. / 100<span>g</span></label>
                     <input type="number" id="mi-saturated-fat" step="0.1">
                 </div>
                 <div class="modal-field">
-                    <label>Zucker / 100g</label>
+                    <label>Zucker / 100<span>g</span></label>
                     <input type="number" id="mi-sugars" step="0.1">
                 </div>
                 <div class="modal-field">
-                    <label>Ballastst. / 100g</label>
+                    <label>Ballastst. / 100<span>g</span></label>
                     <input type="number" id="mi-fiber" step="0.1">
                 </div>
                 <div class="modal-field">
-                    <label>Salz / 100g</label>
+                    <label>Salz / 100<span>g</span></label>
                     <input type="number" id="mi-salt" step="0.1">
                 </div>
                 <div class="modal-field">
-                    <label>Produktmenge (g)</label>
+                    <label>Produktmenge (<span>g</span>)</label>
                     <input type="number" id="mi-product-quantity" step="1">
                 </div>
                 <div class="modal-field">

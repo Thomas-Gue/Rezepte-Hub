@@ -1,7 +1,7 @@
 // ============================================================
 // FIREBASE CONFIGURATION & CONSTANTS
 // ============================================================
-const FIREBASE_URL = "https://kochbuch-rezepte-default-rtdb.europe-west1.firebasedatabase.app";
+const FIREBASE_URL = "https://rezepte-hub-default-rtdb.europe-west1.firebasedatabase.app";
 
 // Default-Rezepte (werden in Firebase hochgeladen, falls die DB leer ist)
 const DEFAULT_RECIPES = {
@@ -301,22 +301,55 @@ async function loadRecipesFromFirebase() {
             return;
         }
 
+        // RECONCILIATION: Wenn der lokale Cache Änderungen hat, die nicht auf Firebase sind,
+        // behalten wir die lokale Version und synchronisieren sie zurück zu Firebase.
+        let mergedRecipes = { ...data };
+        let hasLocalEditsToSync = false;
+
+        if (recipes) {
+            Object.keys(recipes).forEach(id => {
+                const localRec = recipes[id];
+                const fbRec = data[id];
+
+                if (!fbRec) {
+                    // Rezept existiert lokal, aber nicht auf Firebase (z.B. neu erstellt während offline)
+                    mergedRecipes[id] = localRec;
+                    hasLocalEditsToSync = true;
+                    saveRecipeToFirebase(localRec);
+                } else {
+                    // Rezept existiert an beiden Stellen. Vergleiche den Inhalt.
+                    const localStr = JSON.stringify(localRec);
+                    const fbStr = JSON.stringify(fbRec);
+                    if (localStr !== fbStr) {
+                        // Wenn der Benutzer das Rezept gerade aktiv bearbeitet, behalten wir es bei
+                        if (currentRecipe && currentRecipe.id === id) {
+                            localRec.beschreibung = currentRecipe.beschreibung || localRec.beschreibung;
+                            localRec.titel = currentRecipe.titel || localRec.titel;
+                        }
+                        
+                        console.log(`Lokale Änderung für Rezept ${id} erkannt. Synchronisiere zu Firebase...`);
+                        mergedRecipes[id] = localRec;
+                        hasLocalEditsToSync = true;
+                        saveRecipeToFirebase(localRec);
+                    }
+                }
+            });
+        }
+
         // Vergleiche eingehende Daten mit dem Cache, um Flackern zu verhindern
         const cachedStr = localStorage.getItem('recipes_cache');
-        const incomingStr = JSON.stringify(data);
+        const incomingStr = JSON.stringify(mergedRecipes);
 
-        if (cachedStr !== incomingStr) {
-            console.log("Änderung auf Firebase erkannt. UI wird flüssig aktualisiert...");
+        if (cachedStr !== incomingStr || hasLocalEditsToSync) {
+            console.log("Datenbestand aktualisiert. UI wird flüssig geupdatet...");
 
-            // WICHTIG: Wenn wir gerade ein Rezept bearbeiten, wollen wir dessen lokalen Stand
-            // in der recipes-Liste nicht durch den (evtl. veralteten) Stand von Firebase überschreiben!
-            if (currentRecipe && currentRecipe.id && data[currentRecipe.id]) {
-                data[currentRecipe.id] = currentRecipe;
+            if (currentRecipe && currentRecipe.id && mergedRecipes[currentRecipe.id]) {
+                mergedRecipes[currentRecipe.id] = currentRecipe;
             }
 
-            recipes = data;
+            recipes = mergedRecipes;
 
-            // Sicherstellen, dass Standardrezepte immer die schönen Labels haben, selbst bei altem Firebase-Stand
+            // Sicherstellen, dass Standardrezepte immer die schönen Labels haben
             Object.keys(DEFAULT_RECIPES).forEach(id => {
                 if (recipes[id] && (!recipes[id].labels || recipes[id].labels.length === 0)) {
                     recipes[id].labels = DEFAULT_RECIPES[id].labels;
@@ -628,7 +661,7 @@ function renderPreparationEditor(recipe) {
             div.innerHTML = `
                 <span class="prep-drag-handle"><i data-feather="menu"></i></span>
                 <span class="step-number" onclick="toggleStepCompleted(this)" title="Status umschalten">${stepCount++}</span>
-                <div class="step-content" contenteditable="true" data-placeholder="Schritt beschreiben...">${item.text}</div>
+                <p class="step-content" contenteditable="true" data-placeholder="Schritt beschreiben...">${item.text}</p>
                 <button class="zutat-delete-btn" title="Schritt entfernen" onclick="this.parentElement.remove(); syncPreparationToMarkdown(); saveCurrentRecipeImmediately();"><i data-feather="x"></i></button>
             `;
         }
@@ -670,8 +703,13 @@ function toggleStepCompleted(el) {
 
 function syncPreparationToMarkdown() {
     const list = document.getElementById('prep-steps-list');
+    if (!list) return;
     let md = '';
-    list.childNodes.forEach(node => {
+    
+    // Verwende .children statt .childNodes, um Textknoten/Leerzeichen zu ignorieren
+    Array.from(list.children).forEach(node => {
+        if (!node || typeof node.querySelector !== 'function') return;
+        
         const title = node.querySelector('.section-title');
         const content = node.querySelector('.step-content');
         const isCompleted = node.classList.contains('is-completed');
@@ -683,7 +721,10 @@ function syncPreparationToMarkdown() {
             md += `${prefix} ${content.textContent.trim()}\n`;
         }
     });
-    currentRecipe.beschreibung = md.trim();
+    
+    if (currentRecipe) {
+        currentRecipe.beschreibung = md.trim();
+    }
 }
 
 
@@ -740,6 +781,7 @@ function renderIngredients(zutaten, curPort, basePort) {
         if (z.naehrwerte) li.dataset.naehrwerte = JSON.stringify(z.naehrwerte);
         if (z.stkInGrams) li.dataset.stkInGrams = z.stkInGrams;
         if (z.preisProKg) li.dataset.preisProKg = z.preisProKg;
+        if (z.product_quantity) li.dataset.productQuantity = z.product_quantity;
 
         // Dynamischer Dropdown-Generator für Einheiten (streng ohne Fallback)
         const fixedUnits = ["g", "ml", "cl", "Stk.", "TL", "EL"];
@@ -809,14 +851,16 @@ function syncIngredientsFromDOM() {
         const selectEl = li.querySelector('.zutat-einheit-select');
         const unit = selectEl ? selectEl.value : 'g';
 
-        // Erhalte das bestehende stkInGrams und preisProKg falls vorhanden
+        // Erhalte das bestehende stkInGrams, preisProKg und product_quantity falls vorhanden
         const indexStr = li.dataset.index || '';
         const idx = parseInt(indexStr);
         let existingStkGrams = null;
         let existingPreisProKg = null;
+        let existingProductQuantity = null;
         if (!isNaN(idx) && currentRecipe.zutaten[idx]) {
             existingStkGrams = currentRecipe.zutaten[idx].stkInGrams;
             existingPreisProKg = currentRecipe.zutaten[idx].preisProKg;
+            existingProductQuantity = currentRecipe.zutaten[idx].product_quantity;
         }
 
         return {
@@ -826,7 +870,8 @@ function syncIngredientsFromDOM() {
             barcode: li.dataset.barcode || null,
             naehrwerte: li.dataset.naehrwerte ? JSON.parse(li.dataset.naehrwerte) : null,
             stkInGrams: existingStkGrams || parseFloat(li.dataset.stkInGrams) || null,
-            preisProKg: existingPreisProKg || parseFloat(li.dataset.preisProKg) || null
+            preisProKg: existingPreisProKg || parseFloat(li.dataset.preisProKg) || null,
+            product_quantity: existingProductQuantity || parseFloat(li.dataset.productQuantity) || null
         };
     });
 }
@@ -837,26 +882,42 @@ function syncIngredientsFromDOM() {
 // ============================================================
 function loadRecipe(recipe) {
     currentRecipe = JSON.parse(JSON.stringify(recipe));
-    basePortion = recipe.portionen;
-    currentPortion = recipe.portionen;
+    
+    // Robuste Ausfallmechanismen für Portionen
+    basePortion = recipe.portionen || 2;
+    currentPortion = recipe.portionen || 2;
+    currentRecipe.portionen = currentPortion;
 
-    document.getElementById('rv-titel').textContent = recipe.titel;
-    document.getElementById('rv-kurzbeschreibung').textContent = recipe.kurzbeschreibung;
-    document.getElementById('rv-kalorien').textContent = recipe.kalorien;
-    document.getElementById('rv-kosten').textContent = recipe.kosten.toFixed(2);
-    document.getElementById('rv-dauer').textContent = recipe.dauer;
+    // Robuste Ausfallmechanismen für alle Felder
+    currentRecipe.titel = recipe.titel || '';
+    currentRecipe.kurzbeschreibung = recipe.kurzbeschreibung || '';
+    currentRecipe.kalorien = recipe.kalorien || 0;
+    currentRecipe.kosten = recipe.kosten || 0;
+    currentRecipe.dauer = recipe.dauer || 0;
+    currentRecipe.nutriScore = recipe.nutriScore || 'C';
+    currentRecipe.zutaten = recipe.zutaten || [];
+    currentRecipe.beschreibung = recipe.beschreibung || '## Zubereitung\n\n- [ ] Erster Zubereitungsschritt\n';
+    currentRecipe.labels = recipe.labels || [];
+
+    document.getElementById('rv-titel').textContent = currentRecipe.titel;
+    document.getElementById('rv-kurzbeschreibung').textContent = currentRecipe.kurzbeschreibung;
+    document.getElementById('rv-kalorien').textContent = currentRecipe.kalorien;
+    document.getElementById('rv-kosten').textContent = currentRecipe.kosten.toFixed(2);
+    document.getElementById('rv-dauer').textContent = currentRecipe.dauer;
     document.getElementById('rv-portionen').textContent = currentPortion;
-    applyNutriScore(recipe.nutriScore);
+    applyNutriScore(currentRecipe.nutriScore);
 
-    updateNutritionDisplay(recipe);
-    renderIngredients(recipe.zutaten, currentPortion, basePortion);
-    renderPreparationEditor(recipe);
-    renderLabels(recipe.labels || []);
+    updateNutritionDisplay(currentRecipe);
+    renderIngredients(currentRecipe.zutaten, currentPortion, basePortion);
+    renderPreparationEditor(currentRecipe);
+    renderLabels(currentRecipe.labels);
 
     // Event Listener für Always-Editable Felder
     ['rv-titel', 'rv-kurzbeschreibung', 'rv-dauer'].forEach(id => {
         const el = document.getElementById(id);
-        el.addEventListener('input', () => triggerAutosave());
+        if (el) {
+            el.oninput = () => triggerAutosave();
+        }
     });
 }
 
@@ -895,11 +956,18 @@ function saveCurrentRecipeImmediately() {
 
 function syncAllToState() {
     if (!currentRecipe) return;
-    currentRecipe.titel = document.getElementById('rv-titel').textContent.trim();
-    currentRecipe.kurzbeschreibung = document.getElementById('rv-kurzbeschreibung').textContent.trim();
-    currentRecipe.kalorien = parseFloat(document.getElementById('rv-kalorien').textContent) || 0;
-    currentRecipe.dauer = parseInt(document.getElementById('rv-dauer').textContent) || 0;
-    currentRecipe.kosten = parseFloat(document.getElementById('rv-kosten').textContent) || 0;
+    
+    const titelEl = document.getElementById('rv-titel');
+    const descEl = document.getElementById('rv-kurzbeschreibung');
+    const kcalEl = document.getElementById('rv-kalorien');
+    const dauerEl = document.getElementById('rv-dauer');
+    const kostenEl = document.getElementById('rv-kosten');
+
+    currentRecipe.titel = titelEl ? titelEl.textContent.trim() : (currentRecipe.titel || '');
+    currentRecipe.kurzbeschreibung = descEl ? descEl.textContent.trim() : (currentRecipe.kurzbeschreibung || '');
+    currentRecipe.kalorien = kcalEl ? (parseFloat(kcalEl.textContent) || 0) : (currentRecipe.kalorien || 0);
+    currentRecipe.dauer = dauerEl ? (parseInt(dauerEl.textContent) || 0) : (currentRecipe.dauer || 0);
+    currentRecipe.kosten = kostenEl ? (parseFloat(kostenEl.textContent) || 0) : (currentRecipe.kosten || 0);
 
     syncIngredientsFromDOM();
     syncPreparationToMarkdown();
@@ -943,7 +1011,7 @@ function openIngredientModal(index) {
     selectedIngredientIndex = index;
     const z = currentRecipe.zutaten[index];
     document.getElementById('modal-ingredient-name').textContent = z.name;
-    document.getElementById('modal-ingredient-barcode').textContent = z.barcode || 'Kein Barcode';
+    document.getElementById('mi-barcode').value = z.barcode || '';
 
     const nw = z.naehrwerte || {};
     document.getElementById('mi-kcal').value = nw['energy-kcal_100g'] || 0;
@@ -994,6 +1062,9 @@ function saveIngredientDetail() {
     const z = currentRecipe.zutaten[selectedIngredientIndex];
     if (!z.naehrwerte) z.naehrwerte = {};
 
+    const barcodeVal = document.getElementById('mi-barcode').value.trim();
+    z.barcode = barcodeVal ? barcodeVal.replace(/[\.\#\$\[\]\/]/g, '_') : null;
+
     z.naehrwerte['energy-kcal_100g'] = parseFloat(document.getElementById('mi-kcal').value) || 0;
     z.naehrwerte['proteins_100g'] = parseFloat(document.getElementById('mi-proteins').value) || 0;
     z.naehrwerte['fat_100g'] = parseFloat(document.getElementById('mi-fat').value) || 0;
@@ -1020,6 +1091,62 @@ function saveIngredientDetail() {
     recalculateRecipeCost(currentRecipe);
     updateNutritionDisplay(currentRecipe);
     renderIngredients(currentRecipe.zutaten, currentPortion, basePortion);
+
+    // Selbstlernende Datenbank: Manuell eingetragene Barcodes global in Firebase registrieren
+    if (z.barcode && !z.barcode.startsWith('manual-')) {
+        const globalProductData = {
+            product_name: z.name,
+            'energy-kcal_100g': z.naehrwerte['energy-kcal_100g'] || 0,
+            'proteins_100g': z.naehrwerte['proteins_100g'] || 0,
+            'fat_100g': z.naehrwerte['fat_100g'] || 0,
+            'carbohydrates_100g': z.naehrwerte['carbohydrates_100g'] || 0,
+            'saturated-fat_100g': z.naehrwerte['saturated-fat_100g'] || 0,
+            'sugars_100g': z.naehrwerte['sugars_100g'] || 0,
+            'fiber_100g': z.naehrwerte['fiber_100g'] || 0,
+            'salt_100g': z.naehrwerte['salt_100g'] || 0,
+            product_quantity: z.product_quantity || null,
+            preisProKg: z.preisProKg || null
+        };
+
+        // 1. Für Barcode-Scanner-Suche abspeichern
+        fetch(`${FIREBASE_URL}/${z.barcode}.json`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(globalProductData)
+        }).then(res => {
+            if (res.ok) console.log(`Produkt ${z.barcode} global unter Barcode registriert.`);
+        }).catch(err => console.warn("Fehler beim globalen Produkt-Registrieren:", err));
+
+        // 2. Für Zutatensuche (Namensindex) abspeichern
+        const normName = z.name.toLowerCase().trim().replace(/[.#$[\]/]/g, '_');
+        if (normName) {
+            const nameIndexKey = `${normName}|${z.barcode}`;
+            const nameIndexData = {
+                [nameIndexKey]: {
+                    barcode: z.barcode,
+                    product_name: z.name,
+                    'energy-kcal_100g': z.naehrwerte['energy-kcal_100g'] || 0,
+                    'proteins_100g': z.naehrwerte['proteins_100g'] || 0,
+                    'fat_100g': z.naehrwerte['fat_100g'] || 0,
+                    'carbohydrates_100g': z.naehrwerte['carbohydrates_100g'] || 0,
+                    'saturated-fat_100g': z.naehrwerte['saturated-fat_100g'] || 0,
+                    'sugars_100g': z.naehrwerte['sugars_100g'] || 0,
+                    'fiber_100g': z.naehrwerte['fiber_100g'] || 0,
+                    'salt_100g': z.naehrwerte['salt_100g'] || 0,
+                    product_quantity: z.product_quantity || null,
+                    preisProKg: z.preisProKg || null
+                }
+            };
+
+            fetch(`${FIREBASE_URL}/name_index.json`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(nameIndexData)
+            }).then(res => {
+                if (res.ok) console.log(`Produkt ${z.name} im globalen Name-Index registriert.`);
+            }).catch(err => console.warn("Fehler beim globalen Name-Index Registrieren:", err));
+        }
+    }
     saveCurrentRecipeImmediately();
 }
 
@@ -1638,8 +1765,8 @@ function setupSearch() {
 
         if (query.length > 0) {
             const matches = Object.values(recipes).filter(r =>
-                r.titel.toLowerCase().includes(query) ||
-                r.kurzbeschreibung.toLowerCase().includes(query) ||
+                (r.titel || '').toLowerCase().includes(query) ||
+                (r.kurzbeschreibung || '').toLowerCase().includes(query) ||
                 (r.labels && r.labels.some(l => l.toLowerCase().includes(query)))
             );
 
@@ -1647,7 +1774,7 @@ function setupSearch() {
                 matches.forEach(recipe => {
                     const item = document.createElement('div');
                     item.className = 'dropdown-item';
-                    item.innerHTML = `<i data-feather="file-text" style="width:16px;height:16px;color:var(--text-muted)"></i><span>${recipe.titel}</span>`;
+                    item.innerHTML = `<i data-feather="file-text" style="width:16px;height:16px;color:var(--text-muted)"></i><span>${recipe.titel || 'Unbenanntes Rezept'}</span>`;
 
                     item.addEventListener('click', () => {
                         newSearchInput.value = '';
