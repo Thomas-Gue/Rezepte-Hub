@@ -119,6 +119,57 @@
             <h1>Meine Rezepte</h1>
         </header>
 
+        <!-- Filterleiste für Rezepte -->
+        <div class="recipes-filter-bar" style="margin-bottom: 20px; display: flex; flex-wrap: wrap; gap: var(--spacing-sm); align-items: center;">
+            <!-- Preis Filter -->
+            <div class="filter-group" style="display: flex; align-items: center; gap: 6px;">
+                <label class="badge-label" style="font-size: 0.75rem;">Preis:</label>
+                <select id="filter-preis" class="zutat-einheit-select" style="min-width: 80px; padding: 6px 12px; border: 1px solid #cbd5e1; background: #fff;">
+                    <option value="alle">alle</option>
+                    <option value="€">€ (&lt; 3€)</option>
+                    <option value="€€">€€ (&lt; 6€)</option>
+                    <option value="€€€">€€€ (&gt;= 6€)</option>
+                </select>
+            </div>
+
+            <!-- Zeit Filter -->
+            <div class="filter-group" style="display: flex; align-items: center; gap: 6px;">
+                <label class="badge-label" style="font-size: 0.75rem;">Zeit:</label>
+                <select id="filter-zeit" class="zutat-einheit-select" style="min-width: 90px; padding: 6px 12px; border: 1px solid #cbd5e1; background: #fff;">
+                    <option value="alle">alle</option>
+                    <option value="10">&lt; 10min</option>
+                    <option value="30">&lt; 30min</option>
+                    <option value="60">&lt; 1h</option>
+                </select>
+            </div>
+
+            <!-- Kalorien Filter -->
+            <div class="filter-group" style="display: flex; align-items: center; gap: 6px;">
+                <label class="badge-label" style="font-size: 0.75rem;">Kcal:</label>
+                <select id="filter-kcal" class="zutat-einheit-select" style="min-width: 130px; padding: 6px 12px; border: 1px solid #cbd5e1; background: #fff;">
+                    <option value="alle">alle</option>
+                    <option value="spargeltarzan">Spargeltarzan (&lt; 300 kcal)</option>
+                    <option value="medium">medium fett (&lt; 700 kcal)</option>
+                    <option value="foodkoma">Foodkoma (&gt; 700 kcal)</option>
+                </select>
+            </div>
+
+            <!-- Labels verwalten Button -->
+            <button class="ctrl-btn" id="btn-manage-labels" style="padding: 7px 14px; display: inline-flex; align-items: center; gap: 6px;">
+                <i data-feather="tag" style="width: 14px; height: 14px;"></i> Labels verwalten
+            </button>
+
+            <!-- Reset Filter Button -->
+            <button class="ctrl-btn" id="btn-reset-filters" style="padding: 7px 14px; display: inline-flex; align-items: center; gap: 6px; margin-left: auto;">
+                <i data-feather="rotate-ccw" style="width: 14px; height: 14px;"></i> Zurücksetzen
+            </button>
+        </div>
+
+        <!-- Aktive Label-Filter Zeile -->
+        <div id="active-label-filters-container" style="display: none; flex-wrap: wrap; gap: 6px; margin-bottom: 20px; align-items: center; background: #fff; padding: 8px var(--spacing-sm); border-radius: var(--radius-md); border: 1px dashed #cbd5e1;">
+            <!-- Chips werden per JS gerendert -->
+        </div>
+
         <main class="recipes-bento-grid" id="recipes-list-container">
             <div
                 style="grid-column: 1 / -1; text-align: center; color: var(--text-muted); padding: 40px var(--spacing-lg);">
@@ -134,7 +185,9 @@
                 <i data-feather="arrow-left"></i> Zurück
             </button>
             <div class="recipe-view-actions">
-                <!-- Keine manuellen Edit/Save Buttons mehr -->
+                <button class="ctrl-btn" id="btn-pdf-download" title="Rezept als PDF drucken" style="padding: 7px 10px; display: inline-flex; align-items: center; justify-content: center;">
+                    <i data-feather="printer" style="width: 15px; height: 15px;"></i>
+                </button>
             </div>
         </header>
 
@@ -255,6 +308,9 @@
 
                     <!-- Zutatenliste -->
                     <div class="bento-box zutaten-box">
+                        <div class="box-settings-gear" id="btn-zutaten-settings" title="Bearbeitungsmodus für Zutaten">
+                            <i data-feather="settings"></i>
+                        </div>
                         <div class="ingredient-controls">
                             <button class="ctrl-btn btn-bring" id="btn-bring" title="Zu Bring! hinzufügen">
                                 <span class="bring-icon">🛒</span>
@@ -475,6 +531,28 @@
                     style="flex: 1; justify-content: center;">Sichern</button>
                 <button class="action-btn btn-edit" id="btn-delete-ingredient-detail"
                     style="flex: 1; justify-content: center; background: #fee2e2; color: #b91c1c; border-color: #fca5a5;">Löschen</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Labels-Verwalten Modal -->
+    <div id="labels-manage-modal" class="modal-backdrop" style="display: none;">
+        <div class="modal-content" style="max-width: 480px;">
+            <button class="modal-close-btn" id="btn-close-labels-modal">&times;</button>
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                <h2 style="margin: 0;">Labels verwalten</h2>
+                <div class="box-settings-gear" id="btn-labels-settings" title="Bearbeitungsmodus für Labels" style="position: static; display: inline-flex; width: 24px; height: 24px;">
+                    <i data-feather="settings" style="width: 16px; height: 16px;"></i>
+                </div>
+            </div>
+            <p class="modal-subtitle">Hier siehst du alle registrierten Labels. Klicke auf ein Label, um es unwiderruflich aus der Datenbank und allen Rezepten zu entfernen.</p>
+            
+            <div id="modal-labels-container" class="labels-list" style="margin-top: 20px; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; max-height: 240px; overflow-y: auto; padding: 10px; border: 1px dashed #cbd5e1; border-radius: var(--radius-md); overflow-x: hidden;">
+                <!-- Dynamisch: Alle vergebenen Labels werden hier gerendert -->
+            </div>
+            
+            <div class="modal-actions" style="margin-top: 24px; display: flex; gap: 12px; justify-content: center;">
+                <button class="action-btn btn-edit" id="btn-close-labels-modal-action" style="flex: 1; justify-content: center;">Schließen</button>
             </div>
         </div>
     </div>

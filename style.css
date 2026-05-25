@@ -1124,6 +1124,7 @@ body {
     border-radius: 10px;
     padding: 4px 6px;
     margin-left: auto;
+    margin-right: 28px; /* Shifted further to the left to prevent overlap with the gear */
 }
 
 .stepper-btn {
@@ -1154,7 +1155,7 @@ body {
     font-weight: 600;
     color: var(--text-main);
     padding: 0 4px;
-    min-width: 54px;
+    min-width: 32px; /* Reduced from 54px to be less wide */
     text-align: center;
 }
 
@@ -1171,12 +1172,12 @@ body {
 .zutat-item {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 4px 8px;
+    gap: 4px; /* Reduced from 6px */
+    padding: 4px 0px 4px 4px; /* Reduced padding to shift content to the left */
     border-radius: 10px;
     font-size: 0.875rem;
     transition: background 0.15s;
-    cursor: grab;
+    cursor: default; /* Changed from grab to default */
     position: relative;
 }
 
@@ -1198,7 +1199,7 @@ body {
 .zutat-drag-handle {
     color: #cbd5e1;
     cursor: grab;
-    display: flex;
+    display: none; /* Changed from flex to none by default */
     align-items: center;
 }
 
@@ -1210,11 +1211,11 @@ body {
 .zutat-menge {
     font-weight: 700;
     color: var(--accent-dark);
-    min-width: 36px;
+    min-width: 28px; /* Reduced from 36px */
     text-align: right;
     outline: none;
     border-radius: 4px;
-    padding: 1px 4px;
+    padding: 1px 2px; /* Reduced from 4px */
     transition: background 0.2s;
 }
 
@@ -1226,7 +1227,7 @@ body {
     background: transparent;
     border: 1px solid transparent;
     border-radius: 8px;
-    padding: 1px 6px;
+    padding: 1px 4px; /* Reduced from 6px */
     outline: none;
     cursor: pointer;
     transition: all 0.15s ease;
@@ -1237,7 +1238,7 @@ body {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 32px;
+    min-width: 26px; /* Reduced from 32px */
 }
 
 .zutat-einheit-select:hover {
@@ -1264,16 +1265,10 @@ body {
     border: none;
     color: #cbd5e1;
     cursor: pointer;
-    display: flex;
+    display: none; /* Changed from flex to none by default */
     align-items: center;
-    opacity: 0;
-    transition: opacity 0.15s, color 0.15s;
     padding: 2px;
     border-radius: 4px;
-}
-
-.zutat-item:hover .zutat-delete-btn {
-    opacity: 1;
 }
 
 .zutat-delete-btn:hover {
@@ -1284,6 +1279,24 @@ body {
 .zutat-delete-btn i {
     width: 13px;
     height: 13px;
+}
+
+/* Edit Mode Active for Zutaten */
+.zutaten-box.is-editing .zutat-item {
+    cursor: grab;
+}
+
+.zutaten-box.is-editing .zutat-drag-handle,
+.zutaten-box.is-editing .zutat-delete-btn {
+    display: flex;
+    opacity: 1;
+}
+
+/* Settings gear in edit mode rotates 90 degrees and turns blue, identical to prep settings */
+.zutaten-box.is-editing #btn-zutaten-settings i,
+.zutaten-box.is-editing #btn-zutaten-settings svg {
+    color: var(--accent-blue) !important;
+    transform: rotate(90deg);
 }
 
 .add-ingredient-btn {
@@ -2185,51 +2198,6 @@ body {
     padding-left: 8px;
 }
 
-   / *   - - -   R e c i p e   L a b e l s   - - -   * /   . l a b e l s - l i s t    {
-               d i s p l a y :    f l e x ;
-               f l e x - w r a p :    w r a p ;
-               g a p :    8 p x ;
-               m a r g i n - b o t t o m :    8 p x ;
-       
-}
-
-     . l a b e l - c h i p    {
-               d i s p l a y :    i n l i n e - f l e x ;
-               a l i g n - i t e m s :    c e n t e r ;
-               b a c k g r o u n d :    v a r ( - - s u r f a c e - l i g h t ) ;
-               c o l o r :    v a r ( - - t e x t - m a i n ) ;
-               p a d d i n g :    4 p x   1 0 p x ;
-               b o r d e r - r a d i u s :    1 6 p x ;
-               f o n t - s i z e :    0 . 8 5 r e m ;
-               f o n t - w e i g h t :    5 0 0 ;
-               b o r d e r :    1 p x   s o l i d   v a r ( - - b o r d e r - c o l o r ) ;
-       
-}
-
-     . l a b e l - c h i p   . r e m o v e - l a b e l    {
-               m a r g i n - l e f t :    6 p x ;
-               c u r s o r :    p o i n t e r ;
-               c o l o r :    v a r ( - - t e x t - m u t e d ) ;
-               d i s p l a y :    f l e x ;
-               a l i g n - i t e m s :    c e n t e r ;
-               j u s t i f y - c o n t e n t :    c e n t e r ;
-               t r a n s i t i o n :    c o l o r   0 . 2 s   e a s e ;
-       
-}
-
-     . l a b e l - c h i p   . r e m o v e - l a b e l : h o v e r    {
-               c o l o r :    v a r ( - - a c c e n t - r e d ) ;
-       
-}
-
-     . l a b e l - c h i p   . r e m o v e - l a b e l   s v g    {
-               w i d t h :    1 4 p x ;
-               h e i g h t :    1 4 p x ;
-       
-}
-
-       
-
 /* --- Recipe Labels --- */
 .labels-list {
     display: flex;
@@ -2310,4 +2278,263 @@ body {
 
 #rv-kosten::after {
     content: " €";
+}
+
+/* Active Label chip filter highlight */
+.label-chip.is-active {
+    background: rgba(29, 161, 242, 0.15) !important;
+    border-color: var(--accent-blue) !important;
+    color: var(--accent-blue) !important;
+    font-weight: 600 !important;
+}
+
+/* Rotate labels settings gear in edit mode */
+#labels-manage-modal.is-editing #btn-labels-settings i,
+#labels-manage-modal.is-editing #btn-labels-settings svg {
+    color: var(--accent-blue) !important;
+    transform: rotate(90deg);
+}
+
+/* ============================================================
+   A4 LANDSCAPE SINGLE-PAGE PDF PRINT STYLING
+   ============================================================ */
+@media print {
+    @page {
+        size: A4 landscape;
+        margin: 8mm;
+    }
+    
+    /* Reset elements for clean page rendering */
+    html, body {
+        background: #fff !important;
+        color: #0f172a !important;
+        font-size: 10pt !important;
+        line-height: 1.4 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        height: 194mm !important;
+        width: 281mm !important;
+    }
+
+    /* Hide all unrelated UI elements completely */
+    #main-view, 
+    #recipes-view, 
+    .header, 
+    .back-btn, 
+    .recipe-view-header, 
+    .box-settings-gear, 
+    .ingredient-controls, 
+    .prep-actions, 
+    .zutaten-footer-btns, 
+    .modal-backdrop, 
+    .modal-content, 
+    .modal-close-btn, 
+    #toast-container, 
+    #btn-pdf-download,
+    #btn-delete-recipe,
+    .remove-label,
+    .dashed-search,
+    #label-search-container,
+    .ingredient-search-wrapper,
+    .zutat-delete-btn,
+    .zutat-drag-handle {
+        display: none !important;
+    }
+
+    /* Enforce recipe detail view covers the full page printable bounds */
+    #recipe-view {
+        display: block !important;
+        width: 281mm !important;
+        height: 194mm !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #ffffff !important;
+    }
+
+    /* Bento grid columns for print */
+    .recipe-detail-grid {
+        display: grid !important;
+        grid-template-columns: 1.15fr 1fr !important;
+        gap: 12px !important;
+        height: 194mm !important;
+        overflow: hidden !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+    /* Left and Right columns */
+    .recipe-left,
+    .recipe-right {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 10px !important;
+        height: 194mm !important;
+        overflow: hidden !important;
+    }
+
+    /* Bento boxes styling for print */
+    .bento-box {
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 12px !important;
+        box-shadow: none !important;
+        background: #ffffff !important;
+        padding: 10px !important;
+        margin: 0 !important;
+        page-break-inside: avoid !important;
+    }
+
+    /* Recipe Title & Info */
+    .recipe-info-box {
+        padding: 10px !important;
+    }
+    .recipe-title {
+        font-size: 1.35rem !important;
+        margin-top: 0 !important;
+        margin-bottom: 4px !important;
+        color: #0f172a !important;
+    }
+    .recipe-short-desc {
+        font-size: 0.8rem !important;
+        margin: 0 !important;
+        color: #475569 !important;
+        line-height: 1.3 !important;
+    }
+
+    /* Badges grid */
+    .key-props-grid {
+        display: grid !important;
+        grid-template-columns: repeat(4, 1fr) !important;
+        gap: 6px !important;
+    }
+    .key-prop-badge {
+        padding: 6px !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        text-align: center !important;
+    }
+    .key-prop-badge .badge-icon {
+        font-size: 1rem !important;
+        margin-bottom: 2px !important;
+    }
+    .key-prop-badge .badge-label {
+        font-size: 0.6rem !important;
+        margin-bottom: 1px !important;
+    }
+    .key-prop-badge .badge-value {
+        font-size: 0.85rem !important;
+        font-weight: 700 !important;
+    }
+    
+    /* Nutri-score print adjustments */
+    .nutri-badge {
+        padding: 4px !important;
+    }
+    .nutri-scale {
+        gap: 2px !important;
+        height: 16px !important;
+    }
+    .nutri-seg {
+        font-size: 0.6rem !important;
+        width: 14px !important;
+        height: 14px !important;
+    }
+
+    /* Sub bento grid (naehrwerte and zutaten) */
+    .sub-bento-grid {
+        display: grid !important;
+        grid-template-columns: 1fr 1.2fr !important;
+        gap: 10px !important;
+        flex: 1 !important;
+        overflow: hidden !important;
+    }
+
+    .naehrwerte-box,
+    .zutaten-box {
+        padding: 10px !important;
+        flex: 1 !important;
+        overflow: hidden !important;
+        display: flex !important;
+        flex-direction: column !important;
+    }
+
+    .sub-box-title {
+        font-size: 0.75rem !important;
+        margin-bottom: 6px !important;
+    }
+
+    /* Tables and lists tightening */
+    .naehrwert-row {
+        padding: 3px 0 !important;
+        font-size: 0.75rem !important;
+    }
+    .naehrwert-label {
+        font-size: 0.75rem !important;
+    }
+    .naehrwert-value {
+        font-size: 0.75rem !important;
+    }
+
+    .zutaten-list {
+        gap: 2px !important;
+        overflow: hidden !important;
+    }
+    .zutat-item {
+        padding: 3px 0 !important;
+        font-size: 0.75rem !important;
+    }
+    .zutat-menge {
+        min-width: 20px !important;
+        font-size: 0.75rem !important;
+    }
+    .zutat-einheit-select {
+        min-width: 20px !important;
+        font-size: 0.75rem !important;
+        border: none !important;
+        background: transparent !important;
+    }
+    .zutat-name {
+        font-size: 0.75rem !important;
+    }
+
+    /* Preparation section */
+    .zubereitung-box {
+        flex: 1 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        height: 100% !important;
+        overflow: hidden !important;
+    }
+    .preparation-editor-container {
+        flex: 1 !important;
+        overflow: hidden !important;
+        display: flex !important;
+        flex-direction: column !important;
+    }
+    .prep-steps-list {
+        gap: 6px !important;
+        overflow: hidden !important;
+    }
+    .prep-step-item {
+        padding: 6px 10px !important;
+        background: #f8fafc !important;
+        border-radius: 10px !important;
+        font-size: 0.8rem !important;
+    }
+    .prep-section-item {
+        margin-top: 6px !important;
+        padding: 2px 0 !important;
+    }
+    .section-title {
+        font-size: 0.85rem !important;
+    }
+    .step-number {
+        width: 18px !important;
+        height: 18px !important;
+        font-size: 0.65rem !important;
+    }
+    .step-content {
+        font-size: 0.8rem !important;
+        line-height: 1.3 !important;
+    }
 }

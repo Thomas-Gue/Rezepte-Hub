@@ -174,6 +174,8 @@ const DEFAULT_RECIPES = {
 let recipes = {}; // Geladen von Cache / Firebase / Fallback
 let currentRecipe = null;
 let allLabels = [];
+let activeLabelFilters = new Set();
+let labelsEditingMode = false;
 let basePortion = 1;
 let currentPortion = 1;
 let sortableIngredients = null;
@@ -441,54 +443,92 @@ function applyNutriScore(score) {
 // ============================================================
 function getNutritionPerPortion(recipe) {
     const portionen = Math.max(1, recipe.portionen || 1);
+    const zutaten = recipe.zutaten || [];
     const nw = recipe.naehrwerte || {};
 
-    // Gesamtgewicht aus Zutaten berechnen (nur g/ml/kg/l)
-    let totalGrams = 0;
-    (recipe.zutaten || []).forEach(z => {
-        const unit = (z.einheit || '').toLowerCase().trim();
-        const menge = parseFloat(z.menge) || 0;
-        if (unit === 'g' || unit === 'ml') totalGrams += menge;
-        else if (unit === 'kg' || unit === 'l') totalGrams += menge * 1000;
+    const keys = [
+        'energy-kcal', 'fat', 'saturated-fat', 'carbohydrates', 
+        'sugars', 'fiber', 'proteins', 'salt'
+    ];
+
+    const sums = {};
+    const hasData = {};
+    keys.forEach(k => {
+        sums[k] = 0;
+        hasData[k] = false;
     });
 
-    // Wenn kein auswertbares Gewicht vorhanden: Fallback auf 100g-Werte
-    if (totalGrams === 0) {
-        return {
-            'energy-kcal': nw['energy-kcal_100g'] !== undefined ? nw['energy-kcal_100g'] : null,
-            'fat': nw['fat_100g'] !== undefined ? nw['fat_100g'] : null,
-            'saturated-fat': nw['saturated-fat_100g'] !== undefined ? nw['saturated-fat_100g'] : null,
-            'carbohydrates': nw['carbohydrates_100g'] !== undefined ? nw['carbohydrates_100g'] : null,
-            'sugars': nw['sugars_100g'] !== undefined ? nw['sugars_100g'] : null,
-            'fiber': nw['fiber_100g'] !== undefined ? nw['fiber_100g'] : null,
-            'proteins': nw['proteins_100g'] !== undefined ? nw['proteins_100g'] : null,
-            'salt': nw['salt_100g'] !== undefined ? nw['salt_100g'] : null,
-            isFallback: true
-        };
-    }
+    let totalWeight = 0;
+    let hasAnyIngredientData = false;
 
-    const gramsPerPortion = totalGrams / portionen;
+    zutaten.forEach(z => {
+        const grams = convertIngredientToGrams(z.menge, z.einheit, z.stkInGrams);
+        if (grams > 0) {
+            totalWeight += grams;
+            if (z.naehrwerte) {
+                keys.forEach(k => {
+                    const key100g = k === 'energy-kcal' ? 'energy-kcal_100g' : (k + '_100g');
+                    const val100g = z.naehrwerte[key100g];
+                    if (val100g !== undefined && val100g !== null && !isNaN(val100g)) {
+                        sums[k] += (val100g * grams) / 100;
+                        hasData[k] = true;
+                        hasAnyIngredientData = true;
+                    }
+                });
+            }
+        }
+    });
+
+    const result = {};
     const round1 = v => Math.round(v * 10) / 10;
 
-    return {
-        'energy-kcal': nw['energy-kcal_100g'] !== undefined
-            ? Math.round(nw['energy-kcal_100g'] * gramsPerPortion / 100) : null,
-        'fat': nw['fat_100g'] !== undefined ? round1(nw['fat_100g'] * gramsPerPortion / 100) : null,
-        'saturated-fat': nw['saturated-fat_100g'] !== undefined ? round1(nw['saturated-fat_100g'] * gramsPerPortion / 100) : null,
-        'carbohydrates': nw['carbohydrates_100g'] !== undefined ? round1(nw['carbohydrates_100g'] * gramsPerPortion / 100) : null,
-        'sugars': nw['sugars_100g'] !== undefined ? round1(nw['sugars_100g'] * gramsPerPortion / 100) : null,
-        'fiber': nw['fiber_100g'] !== undefined ? round1(nw['fiber_100g'] * gramsPerPortion / 100) : null,
-        'proteins': nw['proteins_100g'] !== undefined ? round1(nw['proteins_100g'] * gramsPerPortion / 100) : null,
-        'salt': nw['salt_100g'] !== undefined ? round1(nw['salt_100g'] * gramsPerPortion / 100) : null,
-        isFallback: false
-    };
+    keys.forEach(k => {
+        const key100g = k === 'energy-kcal' ? 'energy-kcal_100g' : (k + '_100g');
+        
+        if (hasAnyIngredientData) {
+            // Calculate directly from ingredients (assess each parameter individually)
+            if (hasData[k]) {
+                const perPortion = sums[k] / portionen;
+                result[k] = k === 'energy-kcal' ? Math.round(perPortion) : round1(perPortion);
+            } else {
+                result[k] = null;
+            }
+        } else {
+            // Fallback: Calculate from recipe-level naehrwerte using total recipe weight (converting all units!)
+            if (nw[key100g] !== undefined && nw[key100g] !== null && !isNaN(nw[key100g])) {
+                if (totalWeight === 0) {
+                    // Fallback if no weight can be calculated
+                    result[k] = nw[key100g];
+                } else {
+                    const gramsPerPortion = totalWeight / portionen;
+                    const perPortion = (nw[key100g] * gramsPerPortion) / 100;
+                    result[k] = k === 'energy-kcal' ? Math.round(perPortion) : round1(perPortion);
+                }
+            } else {
+                result[k] = null;
+            }
+        }
+    });
+
+    return result;
 }
 
 function updateNutritionDisplay(recipe) {
     const per = getNutritionPerPortion(recipe);
     const fmt = v => (v !== null && v !== undefined) ? v : '—';
 
-    document.getElementById('nw-energy-kcal').textContent = fmt(per['energy-kcal']);
+    const energyVal = fmt(per['energy-kcal']);
+    document.getElementById('nw-energy-kcal').textContent = energyVal;
+
+    const kcalEl = document.getElementById('rv-kalorien');
+    if (kcalEl) {
+        kcalEl.textContent = energyVal;
+    }
+
+    if (per['energy-kcal'] !== null && per['energy-kcal'] !== undefined) {
+        recipe.kalorien = per['energy-kcal'];
+    }
+
     document.getElementById('nw-fat').textContent = fmt(per['fat']);
     document.getElementById('nw-saturated-fat').textContent = fmt(per['saturated-fat']);
     document.getElementById('nw-carbohydrates').textContent = fmt(per['carbohydrates']);
@@ -529,10 +569,9 @@ function convertIngredientToGrams(menge, einheit, stkInGrams) {
 function recalculateRecipeNutrition(recipe) {
     if (!recipe.zutaten || recipe.zutaten.length === 0) return;
 
-    let totalWeight = 0;
     let hasBarcodedIngredients = false;
 
-    // Initialisiere Nährwert-Schnittsummen (pro 100g des fertigen Rezepts)
+    // Initialisiere Nährwert-Schnittsummen (absolute Mengen)
     const totalNutrients = {
         'energy-kcal_100g': 0,
         'fat_100g': 0,
@@ -544,43 +583,55 @@ function recalculateRecipeNutrition(recipe) {
         'salt_100g': 0
     };
 
+    // Tracken des Gewichts pro Nährwert zur Vermeidung von Verwässerung
+    const weightForNutrient = {};
+    for (const key in totalNutrients) {
+        weightForNutrient[key] = 0;
+    }
+
     let weightedScoreSum = 0;
     let scoreWeightTotal = 0;
 
     recipe.zutaten.forEach(z => {
         if (z.naehrwerte) {
-            hasBarcodedIngredients = true;
             const grams = convertIngredientToGrams(z.menge, z.einheit, z.stkInGrams);
-            const factor = grams / 100;
-            totalWeight += grams;
-
-            for (const key in totalNutrients) {
-                if (z.naehrwerte[key] !== undefined && z.naehrwerte[key] !== null) {
-                    totalNutrients[key] += z.naehrwerte[key] * factor;
+            if (grams > 0) {
+                for (const key in totalNutrients) {
+                    if (z.naehrwerte[key] !== undefined && z.naehrwerte[key] !== null && !isNaN(z.naehrwerte[key])) {
+                        hasBarcodedIngredients = true;
+                        totalNutrients[key] += z.naehrwerte[key] * (grams / 100);
+                        weightForNutrient[key] += grams;
+                    }
                 }
-            }
 
-            if (z.nutriScoreValue !== undefined && z.nutriScoreValue !== null) {
-                weightedScoreSum += z.nutriScoreValue * grams;
-                scoreWeightTotal += grams;
+                if (z.nutriScoreValue !== undefined && z.nutriScoreValue !== null) {
+                    weightedScoreSum += z.nutriScoreValue * grams;
+                    scoreWeightTotal += grams;
+                }
             }
         }
     });
 
     if (hasBarcodedIngredients) {
-        const port = recipe.portionen || 2;
-
         // Berechne Nährwert pro 100g des fertigen Rezepts
-        const scaleFactor = totalWeight > 0 ? (totalWeight / 100) : 1;
         recipe.naehrwerte = {};
         for (const key in totalNutrients) {
-            recipe.naehrwerte[key] = Math.round((totalNutrients[key] / scaleFactor) * 10) / 10;
+            const w = weightForNutrient[key];
+            if (w > 0) {
+                recipe.naehrwerte[key] = Math.round((totalNutrients[key] / (w / 100)) * 10) / 10;
+            } else {
+                recipe.naehrwerte[key] = 0;
+            }
         }
 
-        recipe.kalorien = Math.round(totalNutrients['energy-kcal_100g'] / port);
-        const kcalEl = document.getElementById('rv-kalorien');
-        if (kcalEl) {
-            kcalEl.textContent = recipe.kalorien;
+        // Verwende getNutritionPerPortion zur konsistenten Kcal-Berechnung!
+        const perPortion = getNutritionPerPortion(recipe);
+        if (perPortion['energy-kcal'] !== null && perPortion['energy-kcal'] !== undefined) {
+            recipe.kalorien = perPortion['energy-kcal'];
+            const kcalEl = document.getElementById('rv-kalorien');
+            if (kcalEl) {
+                kcalEl.textContent = recipe.kalorien;
+            }
         }
 
         // Berechne gewichteten Nutri-Score
@@ -774,7 +825,6 @@ function renderIngredients(zutaten, curPort, basePort) {
         const scaledMenge = Math.round((z.menge * curPort / basePort) * 10) / 10;
         const li = document.createElement('li');
         li.className = 'zutat-item';
-        li.onclick = () => openIngredientModal(index);
 
         li.dataset.index = index;
         if (z.barcode) li.dataset.barcode = z.barcode;
@@ -782,6 +832,7 @@ function renderIngredients(zutaten, curPort, basePort) {
         if (z.stkInGrams) li.dataset.stkInGrams = z.stkInGrams;
         if (z.preisProKg) li.dataset.preisProKg = z.preisProKg;
         if (z.product_quantity) li.dataset.productQuantity = z.product_quantity;
+        if (z.brands) li.dataset.brands = z.brands;
 
         // Dynamischer Dropdown-Generator für Einheiten (streng ohne Fallback)
         const fixedUnits = ["g", "ml", "cl", "Stk.", "TL", "EL"];
@@ -790,16 +841,37 @@ function renderIngredients(zutaten, curPort, basePort) {
             selectOptionsHtml += `<option value="${u}" ${z.einheit === u ? 'selected' : ''}>${u}</option>`;
         });
 
+        const hasKcal = z.naehrwerte && z.naehrwerte['energy-kcal_100g'] !== undefined && z.naehrwerte['energy-kcal_100g'] !== null && z.naehrwerte['energy-kcal_100g'] > 0;
+        const hasQty = z.product_quantity !== undefined && z.product_quantity !== null && z.product_quantity > 0;
+        const hasPrice = z.preisProKg !== undefined && z.preisProKg !== null && z.preisProKg > 0;
+        const isMissingInfo = !hasKcal || !hasQty || !hasPrice;
+
+        const asteriskHtml = isMissingInfo 
+            ? `<span class="ingredient-missing-asterisk" style="color: #cbd5e1; margin-left: 4px; font-weight: bold; cursor: help;" title="Unvollständige Daten (Kcal, Menge oder Preis fehlt)">*</span>`
+            : '';
+
         li.innerHTML = `
             <span class="zutat-drag-handle"><i data-feather="menu"></i></span>
             <span class="zutat-menge" contenteditable="true" data-base="${z.menge}" onclick="event.stopPropagation()">${scaledMenge}</span>
             <select class="zutat-einheit-select" onclick="event.stopPropagation()">
                 ${selectOptionsHtml}
             </select>
-            <span class="zutat-name" contenteditable="true" onclick="event.stopPropagation()">${z.name}</span>
+            <span class="zutat-name" contenteditable="true" onclick="event.stopPropagation()">${z.name}</span>${asteriskHtml}
             <button class="zutat-delete-btn" title="Zutat entfernen" onclick="event.stopPropagation(); deleteIngredient(${index})"><i data-feather="x"></i></button>
         `;
         list.appendChild(li);
+
+        // Klick auf Verschiebe-Button öffnet Details im Bearbeitungsmodus
+        const dragHandle = li.querySelector('.zutat-drag-handle');
+        if (dragHandle) {
+            dragHandle.onclick = (e) => {
+                e.stopPropagation();
+                const box = document.querySelector('.zutaten-box');
+                if (box && box.classList.contains('is-editing')) {
+                    openIngredientModal(index);
+                }
+            };
+        }
 
         // Autosave anhängen für name und menge
         li.querySelectorAll('.zutat-menge, .zutat-name').forEach(el => {
@@ -833,10 +905,13 @@ function renderIngredients(zutaten, curPort, basePort) {
 
     if (sortableIngredients) sortableIngredients.destroy();
     if (typeof Sortable !== 'undefined') {
+        const box = document.querySelector('.zutaten-box');
+        const isEditing = box && box.classList.contains('is-editing');
         sortableIngredients = new Sortable(list, {
             handle: '.zutat-drag-handle',
             animation: 150,
             ghostClass: 'sortable-ghost',
+            disabled: !isEditing,
             onEnd: () => {
                 syncIngredientsFromDOM();
                 saveCurrentRecipeImmediately();
@@ -851,16 +926,18 @@ function syncIngredientsFromDOM() {
         const selectEl = li.querySelector('.zutat-einheit-select');
         const unit = selectEl ? selectEl.value : 'g';
 
-        // Erhalte das bestehende stkInGrams, preisProKg und product_quantity falls vorhanden
+        // Erhalte das bestehende stkInGrams, preisProKg, product_quantity und brands falls vorhanden
         const indexStr = li.dataset.index || '';
         const idx = parseInt(indexStr);
         let existingStkGrams = null;
         let existingPreisProKg = null;
         let existingProductQuantity = null;
+        let existingBrands = null;
         if (!isNaN(idx) && currentRecipe.zutaten[idx]) {
             existingStkGrams = currentRecipe.zutaten[idx].stkInGrams;
             existingPreisProKg = currentRecipe.zutaten[idx].preisProKg;
             existingProductQuantity = currentRecipe.zutaten[idx].product_quantity;
+            existingBrands = currentRecipe.zutaten[idx].brands;
         }
 
         return {
@@ -871,7 +948,8 @@ function syncIngredientsFromDOM() {
             naehrwerte: li.dataset.naehrwerte ? JSON.parse(li.dataset.naehrwerte) : null,
             stkInGrams: existingStkGrams || parseFloat(li.dataset.stkInGrams) || null,
             preisProKg: existingPreisProKg || parseFloat(li.dataset.preisProKg) || null,
-            product_quantity: existingProductQuantity || parseFloat(li.dataset.productQuantity) || null
+            product_quantity: existingProductQuantity || parseFloat(li.dataset.productQuantity) || null,
+            brands: existingBrands || li.dataset.brands || null
         };
     });
 }
@@ -1096,6 +1174,7 @@ function saveIngredientDetail() {
     if (z.barcode && !z.barcode.startsWith('manual-')) {
         const globalProductData = {
             product_name: z.name,
+            brands: z.brands || '',
             'energy-kcal_100g': z.naehrwerte['energy-kcal_100g'] || 0,
             'proteins_100g': z.naehrwerte['proteins_100g'] || 0,
             'fat_100g': z.naehrwerte['fat_100g'] || 0,
@@ -1108,7 +1187,7 @@ function saveIngredientDetail() {
             preisProKg: z.preisProKg || null
         };
 
-        // 1. Für Barcode-Scanner-Suche abspeichern
+        // Direkt unter Barcode abspeichern (Firebase-Suche greift automatisch darauf zu)
         fetch(`${FIREBASE_URL}/${z.barcode}.json`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
@@ -1116,36 +1195,6 @@ function saveIngredientDetail() {
         }).then(res => {
             if (res.ok) console.log(`Produkt ${z.barcode} global unter Barcode registriert.`);
         }).catch(err => console.warn("Fehler beim globalen Produkt-Registrieren:", err));
-
-        // 2. Für Zutatensuche (Namensindex) abspeichern
-        const normName = z.name.toLowerCase().trim().replace(/[.#$[\]/]/g, '_');
-        if (normName) {
-            const nameIndexKey = `${normName}|${z.barcode}`;
-            const nameIndexData = {
-                [nameIndexKey]: {
-                    barcode: z.barcode,
-                    product_name: z.name,
-                    'energy-kcal_100g': z.naehrwerte['energy-kcal_100g'] || 0,
-                    'proteins_100g': z.naehrwerte['proteins_100g'] || 0,
-                    'fat_100g': z.naehrwerte['fat_100g'] || 0,
-                    'carbohydrates_100g': z.naehrwerte['carbohydrates_100g'] || 0,
-                    'saturated-fat_100g': z.naehrwerte['saturated-fat_100g'] || 0,
-                    'sugars_100g': z.naehrwerte['sugars_100g'] || 0,
-                    'fiber_100g': z.naehrwerte['fiber_100g'] || 0,
-                    'salt_100g': z.naehrwerte['salt_100g'] || 0,
-                    product_quantity: z.product_quantity || null,
-                    preisProKg: z.preisProKg || null
-                }
-            };
-
-            fetch(`${FIREBASE_URL}/name_index.json`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(nameIndexData)
-            }).then(res => {
-                if (res.ok) console.log(`Produkt ${z.name} im globalen Name-Index registriert.`);
-            }).catch(err => console.warn("Fehler beim globalen Name-Index Registrieren:", err));
-        }
     }
     saveCurrentRecipeImmediately();
 }
@@ -1475,13 +1524,73 @@ function addIngredientFromData(cleanBarcode, data) {
         naehrwerte: naehrwerte,
         nutriScoreValue: data.nutriScoreValue || null,
         product_quantity: parseFloat(data.product_quantity) || null,
-        preisProKg: parseFloat(data.preisProKg) || null
+        preisProKg: parseFloat(data.preisProKg) || null,
+        brands: brand
     });
 
     renderIngredients(currentRecipe.zutaten, currentPortion, basePortion);
     saveCurrentRecipeImmediately();
 }
 
+
+// ============================================================
+// HILFSFUNKTION: CASE-INSENSITIVE DIREKTSUCHE IN FIREBASE (0% DUPLIKATION)
+// ============================================================
+async function searchFirebaseByProductName(rawQuery, limit = 20) {
+    const cleanQuery = rawQuery.trim().replace(/[.#$[\]/]/g, '_');
+    if (cleanQuery.length < 2) return [];
+
+    // Erstelle 4 gängige Casing-Variationen für eine hervorragende Case-Insensitivity
+    const v1 = cleanQuery.toLowerCase();
+    const v2 = cleanQuery.charAt(0).toUpperCase() + cleanQuery.slice(1).toLowerCase();
+    const v3 = cleanQuery.toUpperCase();
+    const v4 = cleanQuery.replace(/\b\w/g, c => c.toUpperCase()); // Title Case ("Bio Lachs")
+
+    const variations = Array.from(new Set([v1, v2, v3, v4]));
+
+    const fetchPromises = variations.map(async (v) => {
+        const endVal = v + '\uf8ff';
+        const url = `${FIREBASE_URL}/.json?orderBy="product_name"&startAt=${encodeURIComponent(JSON.stringify(v))}&endAt=${encodeURIComponent(JSON.stringify(endVal))}&limitToFirst=${limit}`;
+        try {
+            const res = await fetch(url);
+            if (res.ok) {
+                const data = await res.json();
+                if (data && typeof data === 'object') {
+                    // Firebase liefert { "barcode1": { ... }, "barcode2": { ... } }
+                    return Object.entries(data).map(([barcode, details]) => {
+                        if (details && typeof details === 'object') {
+                            return {
+                                barcode: barcode,
+                                product_name: details.product_name || '',
+                                brands: details.brands || '',
+                                ...details
+                            };
+                        }
+                        return null;
+                    }).filter(item => item !== null);
+                }
+            }
+        } catch (err) {
+            console.warn(`Firebase-Suche für Variation "${v}" fehlgeschlagen:`, err);
+        }
+        return [];
+    });
+
+    try {
+        const resultsArray = await Promise.all(fetchPromises);
+        // Zusammenführen und nach Barcode deduplizieren
+        const fbMap = new Map();
+        resultsArray.flat().forEach(item => {
+            if (item && item.barcode) {
+                fbMap.set(item.barcode, item);
+            }
+        });
+        return Array.from(fbMap.values());
+    } catch (err) {
+        console.error("Fehler bei der parallelen Suche:", err);
+        return [];
+    }
+}
 
 // ============================================================
 // PRODUKTNAME-SUCHE (Ingredient Search mit Dropdown)
@@ -1521,23 +1630,8 @@ function setupIngredientSearch() {
             // 1. Hole lokale Kandidaten
             const candidates = getFuzzyCandidates();
 
-            // 2. Hole Firebase-Kandidaten per Präfix des gesamten Suchbegriffs (nicht auf 3 Zeichen limitiert!)
-            const prefix = rawQuery.toLowerCase().replace(/[.#$[\]/]/g, '_');
-            const end = prefix + '\uf8ff';
-            const url = `${FIREBASE_URL}/name_index.json?orderBy="%24key"&startAt=${encodeURIComponent(JSON.stringify(prefix))}&endAt=${encodeURIComponent(JSON.stringify(end))}&limitToFirst=60`;
-
-            let fbItems = [];
-            try {
-                const res = await fetch(url);
-                if (res.ok) {
-                    const data = await res.json();
-                    if (data) {
-                        fbItems = Object.values(data);
-                    }
-                }
-            } catch (err) {
-                console.warn("Firebase-Präfixsuche fehlgeschlagen:", err);
-            }
+            // 2. Hole Firebase-Kandidaten per Direktsuche
+            const fbItems = await searchFirebaseByProductName(rawQuery, 30);
 
             // 3. Zusammenführen und Duplikate filtern
             const merged = [...fbItems];
@@ -1603,11 +1697,24 @@ function renderIngredientResults(items, resultsEl) {
         const kcal = item['energy-kcal_100g'] != null ? `<span class="ingredient-dropdown-kcal">${item['energy-kcal_100g']} kcal</span>` : '';
         div.innerHTML = `<span class="ingredient-dropdown-name">${item.product_name || '?'}</span>${brand}${kcal}`;
 
-        div.addEventListener('click', () => {
+        div.addEventListener('click', async () => {
             resultsEl.style.display = 'none';
-            // Auch in productCache schreiben damit Barcode-Lookup gecacht ist
-            productCache[item.barcode] = item;
-            addIngredientFromData(item.barcode, item);
+            
+            let fullData = item;
+            if (item.barcode && !item.barcode.startsWith('manual-') && item['fat_100g'] === undefined) {
+                try {
+                    const res = await fetch(`${FIREBASE_URL}/${item.barcode}.json`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data) fullData = data;
+                    }
+                } catch (err) {
+                    console.warn("Fehler beim Abrufen der Nährwerte:", err);
+                }
+            }
+            
+            productCache[item.barcode] = fullData;
+            addIngredientFromData(item.barcode, fullData);
         });
 
         resultsEl.appendChild(div);
@@ -1625,11 +1732,98 @@ function renderRecipesList() {
 
     listContainer.innerHTML = '';
 
-    const keys = Object.keys(recipes);
+    // Render active label filters badges
+    const activeLabelsContainer = document.getElementById('active-label-filters-container');
+    if (activeLabelsContainer) {
+        if (activeLabelFilters.size === 0) {
+            activeLabelsContainer.style.display = 'none';
+        } else {
+            activeLabelsContainer.style.display = 'flex';
+            activeLabelsContainer.innerHTML = `<span style="font-size: 0.8rem; font-weight: 600; margin-right: 8px; color: var(--text-muted);">Aktive Filter:</span>`;
+            activeLabelFilters.forEach(label => {
+                const badge = document.createElement('div');
+                badge.className = 'label-chip is-active';
+                badge.style.display = 'inline-flex';
+                badge.style.alignItems = 'center';
+                badge.style.gap = '4px';
+                badge.style.cursor = 'pointer';
+                badge.style.fontSize = '0.75rem';
+                badge.style.padding = '3px 8px';
+                badge.style.borderRadius = '12px';
+                badge.innerHTML = `
+                    ${label}
+                    <span class="remove-label" style="display: inline-flex; align-items: center;" title="Filter entfernen">
+                        <i data-feather="x" style="width: 12px; height: 12px;"></i>
+                    </span>
+                `;
+                badge.addEventListener('click', () => {
+                    activeLabelFilters.delete(label);
+                    renderRecipesList();
+                    const modal = document.getElementById('labels-manage-modal');
+                    if (modal && modal.style.display !== 'none') {
+                        renderManageLabelsModal();
+                    }
+                });
+                activeLabelsContainer.appendChild(badge);
+            });
+        }
+    }
+
+    let keys = Object.keys(recipes);
+
+    // Dynamic agile filtering
+    const filterPreis = document.getElementById('filter-preis')?.value || 'alle';
+    if (filterPreis !== 'alle') {
+        keys = keys.filter(key => {
+            const recipe = recipes[key];
+            const costPerPortion = recipe.kosten !== undefined && recipe.kosten !== null
+                ? recipe.kosten / Math.max(1, recipe.portionen || 1)
+                : 0;
+            if (filterPreis === '€') return costPerPortion < 3;
+            if (filterPreis === '€€') return costPerPortion >= 3 && costPerPortion < 6;
+            if (filterPreis === '€€€') return costPerPortion >= 6;
+            return true;
+        });
+    }
+
+    const filterZeit = document.getElementById('filter-zeit')?.value || 'alle';
+    if (filterZeit !== 'alle') {
+        const maxTime = parseInt(filterZeit);
+        keys = keys.filter(key => {
+            const recipe = recipes[key];
+            return (recipe.dauer || 0) <= maxTime;
+        });
+    }
+
+    const filterKcal = document.getElementById('filter-kcal')?.value || 'alle';
+    if (filterKcal !== 'alle') {
+        keys = keys.filter(key => {
+            const recipe = recipes[key];
+            const per = getNutritionPerPortion(recipe);
+            const kcalPerPortion = per['energy-kcal'] !== null && per['energy-kcal'] !== undefined
+                ? per['energy-kcal']
+                : (recipe.kalorien || 0);
+
+            if (filterKcal === 'spargeltarzan') return kcalPerPortion < 300;
+            if (filterKcal === 'medium') return kcalPerPortion >= 300 && kcalPerPortion < 700;
+            if (filterKcal === 'foodkoma') return kcalPerPortion >= 700;
+            return true;
+        });
+    }
+
+    // Filter by selected labels (AND search logic)
+    if (activeLabelFilters.size > 0) {
+        keys = keys.filter(key => {
+            const recipe = recipes[key];
+            if (!recipe.labels || !Array.isArray(recipe.labels)) return false;
+            return Array.from(activeLabelFilters).every(l => recipe.labels.includes(l));
+        });
+    }
+
     if (keys.length === 0) {
         listContainer.innerHTML = `
             <div style="grid-column: 1 / -1; text-align: center; color: var(--text-muted); padding: 40px var(--spacing-lg);">
-                <p>Keine Rezepte in Firebase vorhanden.</p>
+                <p>Keine passenden Rezepte gefunden.</p>
             </div>
         `;
         return;
@@ -1662,6 +1856,11 @@ function renderRecipesList() {
                 `</div>`;
         }
 
+        const portionen = Math.max(1, recipe.portionen || 1);
+        const costPerPortion = recipe.kosten !== undefined && recipe.kosten !== null
+            ? (recipe.kosten / portionen).toFixed(2)
+            : '—';
+
         card.innerHTML = `
             ${badgeHtml}
             ${imgHtml}
@@ -1670,7 +1869,7 @@ function renderRecipesList() {
                 <h3>${recipe.titel || 'Unbenanntes Rezept'}</h3>
                 <p>${recipe.kurzbeschreibung || 'Keine Beschreibung vorhanden'}</p>
                 <span class="recipe-meta">
-                    <i data-feather="clock"></i> ${recipe.dauer} Min. &bull; 🔥 ${recipe.kalorien} kcal
+                    <i data-feather="clock"></i> ${recipe.dauer} Min. &bull; 🔥 ${recipe.kalorien} kcal &bull; 💶 ${costPerPortion} €
                 </span>
             </div>
         `;
@@ -1841,6 +2040,130 @@ function showRecipeView(recipeOrId) {
 }
 
 // ============================================================
+// GLOBAL LABEL MANAGEMENT (New)
+// ============================================================
+function renderManageLabelsModal() {
+    const container = document.getElementById('modal-labels-container');
+    if (!container) return;
+    container.innerHTML = '';
+
+    // Wir holen alle aktuell vergebenen Labels (aus allLabels und allen Rezepten)
+    const uniqueLabels = new Set(allLabels || []);
+    Object.values(recipes).forEach(r => {
+        if (r && r.labels) {
+            r.labels.forEach(l => uniqueLabels.add(l));
+        }
+    });
+
+    const labelsList = Array.from(uniqueLabels).filter(Boolean).sort();
+    if (labelsList.length === 0) {
+        container.innerHTML = '<p style="color: var(--text-muted); font-size: 0.9rem; padding: 20px 0;">Keine Labels vorhanden.</p>';
+        return;
+    }
+
+    labelsList.forEach(label => {
+        const isActive = activeLabelFilters.has(label);
+        const chip = document.createElement('div');
+        chip.className = `label-chip ${isActive ? 'is-active' : ''}`;
+        chip.style.display = 'inline-flex';
+        chip.style.alignItems = 'center';
+        chip.style.padding = '4px 10px';
+        chip.style.borderRadius = '16px';
+        chip.style.cursor = 'pointer';
+        if (!isActive) {
+            chip.style.background = '#f1f5f9';
+            chip.style.border = '1px solid #cbd5e1';
+        }
+        const showTrash = labelsEditingMode ? 'inline-flex' : 'none';
+        chip.innerHTML = `
+            <span>${label}</span>
+            <span class="remove-label" style="cursor: pointer; margin-left: 8px; display: ${showTrash}; align-items: center; color: #ef4444;" title="Label global löschen">
+                <i data-feather="trash-2" style="width: 14px; height: 14px;"></i>
+            </span>
+        `;
+        
+        chip.addEventListener('click', (e) => {
+            if (e.target.closest('.remove-label')) return; // ignore delete clicks
+            if (activeLabelFilters.has(label)) {
+                activeLabelFilters.delete(label);
+            } else {
+                activeLabelFilters.add(label);
+            }
+            renderManageLabelsModal();
+            renderRecipesList();
+        });
+        
+        chip.querySelector('.remove-label').onclick = (e) => {
+            e.stopPropagation();
+            deleteGlobalLabel(label);
+        };
+        
+        container.appendChild(chip);
+    });
+
+    if (typeof feather !== 'undefined') feather.replace();
+}
+
+async function deleteGlobalLabel(label) {
+    // Rückfrage-Popup
+    const confirmDelete = confirm(`Möchtest du das Label "${label}" wirklich unwiderruflich löschen? Es wird aus allen Rezepten und der globalen Liste gelöscht.`);
+    if (!confirmDelete) return;
+
+    // Remove from active filters if present
+    activeLabelFilters.delete(label);
+
+    // 1. Aus globaler Liste entfernen
+    allLabels = (allLabels || []).filter(l => l !== label);
+    localStorage.setItem('global_labels', JSON.stringify(allLabels));
+
+    // 2. Aus allen Rezepten entfernen
+    let updatedCount = 0;
+    const promises = [];
+    Object.keys(recipes).forEach(id => {
+        const recipe = recipes[id];
+        if (recipe && recipe.labels && recipe.labels.includes(label)) {
+            recipe.labels = recipe.labels.filter(l => l !== label);
+            updatedCount++;
+            
+            // Firebase-Update vorbereiten
+            promises.push(saveRecipeToFirebase(recipe));
+        }
+    });
+
+    // 3. allLabels in Firebase sichern
+    try {
+        await fetch(`${FIREBASE_URL}/labels.json`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(allLabels)
+        });
+    } catch (e) {
+        console.warn("Konnte Labels in Firebase nicht aktualisieren", e);
+    }
+
+    // Warten bis alle Rezepte aktualisiert sind
+    if (promises.length > 0) {
+        try {
+            await Promise.all(promises);
+        } catch (e) {
+            console.error("Fehler beim Sichern der geänderten Rezepte", e);
+        }
+    }
+
+    // 4. Cache aktualisieren und UI neu rendern
+    localStorage.setItem('recipes_cache', JSON.stringify(recipes));
+    showToast("Label gelöscht", `Das Label "${label}" wurde aus ${updatedCount} Rezepten gelöscht.`);
+    
+    // UI-Aktualisierung
+    renderManageLabelsModal();
+    renderRecipesList();
+    if (currentRecipe) {
+        currentRecipe.labels = (currentRecipe.labels || []).filter(l => l !== label);
+        renderLabels(currentRecipe.labels);
+    }
+}
+
+// ============================================================
 // INITIALIZATION
 // ============================================================
 document.addEventListener('DOMContentLoaded', () => {
@@ -1898,6 +2221,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Zutaten Editor Settings Toggle (New)
+    document.getElementById('btn-zutaten-settings')?.addEventListener('click', () => {
+        const box = document.querySelector('.zutaten-box');
+        if (box) {
+            const isEditing = box.classList.toggle('is-editing');
+            if (sortableIngredients) {
+                sortableIngredients.option('disabled', !isEditing);
+            }
+        }
+    });
+
     // Preparation Editor
     document.getElementById('btn-add-step')?.addEventListener('click', addPrepStep);
     document.getElementById('btn-add-section')?.addEventListener('click', addPrepSection);
@@ -1926,6 +2260,62 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-portion-down')?.addEventListener('click', () => updatePortions(currentPortion - 1));
 
     document.getElementById('btn-bring')?.addEventListener('click', () => alert('🛒 Wird zur Bring!-Liste hinzugefügt…'));
+
+    // Rezept-Filter Event-Listener (New)
+    ['filter-preis', 'filter-zeit', 'filter-kcal'].forEach(id => {
+        document.getElementById(id)?.addEventListener('change', () => {
+            renderRecipesList();
+        });
+    });
+
+    document.getElementById('btn-reset-filters')?.addEventListener('click', () => {
+        const fp = document.getElementById('filter-preis');
+        const fz = document.getElementById('filter-zeit');
+        const fk = document.getElementById('filter-kcal');
+        if (fp) fp.value = 'alle';
+        if (fz) fz.value = 'alle';
+        if (fk) fk.value = 'alle';
+        activeLabelFilters.clear();
+        renderRecipesList();
+        const modal = document.getElementById('labels-manage-modal');
+        if (modal && modal.style.display !== 'none') {
+            renderManageLabelsModal();
+        }
+    });
+
+    // Label Manager Modal Event-Listener (New)
+    document.getElementById('btn-manage-labels')?.addEventListener('click', () => {
+        labelsEditingMode = false;
+        const modal = document.getElementById('labels-manage-modal');
+        if (modal) {
+            modal.classList.remove('is-editing');
+            modal.style.display = 'flex';
+        }
+        renderManageLabelsModal();
+    });
+
+    document.getElementById('btn-close-labels-modal')?.addEventListener('click', () => {
+        document.getElementById('labels-manage-modal').style.display = 'none';
+        labelsEditingMode = false;
+    });
+
+    document.getElementById('btn-close-labels-modal-action')?.addEventListener('click', () => {
+        document.getElementById('labels-manage-modal').style.display = 'none';
+        labelsEditingMode = false;
+    });
+
+    document.getElementById('btn-labels-settings')?.addEventListener('click', () => {
+        labelsEditingMode = !labelsEditingMode;
+        const modal = document.getElementById('labels-manage-modal');
+        if (modal) {
+            modal.classList.toggle('is-editing', labelsEditingMode);
+        }
+        renderManageLabelsModal();
+    });
+
+    document.getElementById('btn-pdf-download')?.addEventListener('click', () => {
+        window.print();
+    });
 });
 
 function createNewRecipe() {
@@ -2055,23 +2445,8 @@ function setupInlineIngredientSearch() {
             // 1. Hole lokale Kandidaten
             const candidates = getFuzzyCandidates();
 
-            // 2. Hole Firebase-Kandidaten per Präfix des gesamten Suchbegriffs (nicht auf 3 Zeichen limitiert!)
-            const prefix = rawQuery.toLowerCase().replace(/[.#$[\]/]/g, '_');
-            const end = prefix + '\uf8ff';
-            const url = `${FIREBASE_URL}/name_index.json?orderBy="%24key"&startAt=${encodeURIComponent(JSON.stringify(prefix))}&endAt=${encodeURIComponent(JSON.stringify(end))}&limitToFirst=60`;
-
-            let fbItems = [];
-            try {
-                const res = await fetch(url);
-                if (res.ok) {
-                    const data = await res.json();
-                    if (data) {
-                        fbItems = Object.values(data);
-                    }
-                }
-            } catch (err) {
-                console.warn("Firebase-Präfixsuche fehlgeschlagen:", err);
-            }
+            // 2. Hole Firebase-Kandidaten per Direktsuche
+            const fbItems = await searchFirebaseByProductName(rawQuery, 20);
 
             // 3. Zusammenführen und Duplikate filtern
             const merged = [...fbItems];
@@ -2120,10 +2495,25 @@ function renderInlineResults(items, resultsEl) {
         const div = document.createElement('div');
         div.className = 'ingredient-dropdown-item';
         div.innerHTML = `<span class="ingredient-dropdown-name">${item.product_name || '?'}</span> <span class="ingredient-dropdown-brand">${item.brands || ''}</span>`;
-        div.addEventListener('click', () => {
+        div.addEventListener('click', async () => {
             resultsEl.style.display = 'none';
             document.getElementById('inline-ingredient-search').value = '';
-            addIngredientFromData(item.barcode, item);
+            
+            let fullData = item;
+            if (item.barcode && !item.barcode.startsWith('manual-') && item['fat_100g'] === undefined) {
+                try {
+                    const res = await fetch(`${FIREBASE_URL}/${item.barcode}.json`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data) fullData = data;
+                    }
+                } catch (err) {
+                    console.warn("Fehler beim Abrufen der Nährwerte:", err);
+                }
+            }
+            
+            productCache[item.barcode] = fullData;
+            addIngredientFromData(item.barcode, fullData);
         });
         resultsEl.appendChild(div);
     });
@@ -2178,24 +2568,9 @@ function setupStandaloneSearch() {
         resultsEl.style.display = 'none';
 
         try {
-            // Firebase $key-Ordering — kein .indexOn nötig!
-            // Key-Format: "{normalisierter_name}|{barcode}"
-            const q = rawQuery.toLowerCase().replace(/[.#$[\]/]/g, '_');
-            const end = q + '\uf8ff';
-            const url = `${FIREBASE_URL}/name_index.json` +
-                `?orderBy=%22%24key%22` +
-                `&startAt=${encodeURIComponent(JSON.stringify(q))}` +
-                `&endAt=${encodeURIComponent(JSON.stringify(end))}` +
-                `&limitToFirst=12`;
-
-            const res = await fetch(url);
+            // Firebase Direktsuche per indiziertem product_name
+            const items = await searchFirebaseByProductName(rawQuery, 15);
             spinner.style.display = 'none';
-
-            if (!res.ok) throw new Error('Netzwerkfehler ' + res.status);
-
-            const data = await res.json();
-            // Jeder Value ist: { product_name, brands, energy-kcal_100g, ... }
-            const items = data ? Object.values(data) : [];
 
             ingredientSearchCache[cacheKey] = items;
             renderStandaloneResults(items, resultsEl);
@@ -2203,7 +2578,7 @@ function setupStandaloneSearch() {
         } catch (err) {
             spinner.style.display = 'none';
             console.error('Standalone search error:', err);
-            resultsEl.innerHTML = '<div class="ingredient-dropdown-item ingredient-dropdown-info">Fehler — wurde der Name-Index bereits aufgebaut?</div>';
+            resultsEl.innerHTML = '<div class="ingredient-dropdown-item ingredient-dropdown-info">Fehler bei der Suche in Firebase.</div>';
             resultsEl.style.display = 'block';
         }
     }, 280);
@@ -2225,11 +2600,25 @@ function renderStandaloneResults(items, resultsEl) {
         const kcal = item['energy-kcal_100g'] != null
             ? `<span class="ingredient-dropdown-kcal">${item['energy-kcal_100g']} kcal</span>` : '';
         div.innerHTML = `<span class="ingredient-dropdown-name">${item.product_name || '?'}</span>${brand}${kcal}`;
-        div.addEventListener('click', () => {
+        div.addEventListener('click', async () => {
             resultsEl.style.display = 'none';
             document.getElementById('search-modal').style.display = 'none';
-            productCache[item.barcode] = item;
-            addIngredientFromData(item.barcode, item);
+            
+            let fullData = item;
+            if (item.barcode && !item.barcode.startsWith('manual-') && item['fat_100g'] === undefined) {
+                try {
+                    const res = await fetch(`${FIREBASE_URL}/${item.barcode}.json`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data) fullData = data;
+                    }
+                } catch (err) {
+                    console.warn("Fehler beim Abrufen der Nährwerte:", err);
+                }
+            }
+            
+            productCache[item.barcode] = fullData;
+            addIngredientFromData(item.barcode, fullData);
         });
         resultsEl.appendChild(div);
     });
