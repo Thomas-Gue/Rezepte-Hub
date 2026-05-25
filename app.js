@@ -4,169 +4,7 @@
 const FIREBASE_URL = "https://rezepte-hub-default-rtdb.europe-west1.firebasedatabase.app";
 
 // Default-Rezepte (werden in Firebase hochgeladen, falls die DB leer ist)
-const DEFAULT_RECIPES = {
-    "carbonara-001": {
-        id: "carbonara-001",
-        titel: "Spaghetti Carbonara",
-        kurzbeschreibung: "Der römische Klassiker mit cremigem Eigelb, echtem Guanciale und würzigem Pecorino Romano. Einfach, aber unglaublich befriedigend.",
-        schaerfe: 1,
-        kalorien: 680,
-        kosten: 2.40,
-        dauer: 25,
-        nutriScore: "C",
-        portionen: 2,
-        labels: ["Pasta", "Klassiker"],
-        naehrwerte: {
-            'energy-kcal_100g': 340,
-            'fat_100g': 15,
-            'saturated-fat_100g': 6,
-            'carbohydrates_100g': 36,
-            'sugars_100g': 1.25,
-            'fiber_100g': 1.5,
-            'proteins_100g': 14,
-            'salt_100g': 0.9
-        },
-        zutaten: [
-            { menge: 200, einheit: "g", name: "Spaghetti" },
-            { menge: 100, einheit: "g", name: "Guanciale" },
-            { menge: 3, einheit: "Stk.", name: "Eigelb" },
-            { menge: 60, einheit: "g", name: "Pecorino Romano" },
-            { menge: 1, einheit: "TL", name: "schwarzer Pfeffer" },
-            { menge: 1, einheit: "Prise", name: "Salz" }
-        ],
-        beschreibung: `## Vorbereitung
-
-- [ ] Einen großen Topf Salzwasser zum Kochen bringen.
-- [ ] Guanciale in fingerdicke Streifen schneiden.
-- [ ] Pecorino fein reiben.
-
-## Zubereitung
-
-- [ ] Guanciale in einer Pfanne ohne Öl bei mittlerer Hitze goldbraun und knusprig auslassen. Pfanne vom Herd nehmen.
-- [ ] Spaghetti al dente kochen (ca. 1 Minute weniger als Packungsangabe). **Ca. 200 ml Kochwasser auffangen.**
-- [ ] Eigelb mit Pecorino und frisch gemahlenem Pfeffer in einer Schüssel glatt rühren.
-- [ ] Heiße Pasta zur Guanciale-Pfanne geben (Herd aus!). Eimasse hinzugeben und zügig mit etwas Kochwasser cremig rühren.
-- [ ] Sofort servieren und nach Geschmack mit mehr Pecorino und Pfeffer garnieren.
-
-> 💡 **Tipp:** Niemals die Pfanne wieder auf die Hitze stellen, nachdem die Eimasse dazu kommt – sonst wird es Rührei.`
-    },
-    "linsendal-002": {
-        id: "linsendal-002",
-        titel: "Linsen-Dal",
-        kurzbeschreibung: "Wärmend, cremig und proteinreich mit roten Linsen und Kokosmilch. Perfekt mit Reis oder Naan-Brot.",
-        schaerfe: 2,
-        kalorien: 420,
-        kosten: 1.50,
-        dauer: 30,
-        nutriScore: "A",
-        portionen: 3,
-        labels: ["Veggie", "Indisch"],
-        naehrwerte: {
-            'energy-kcal_100g': 140,
-            'fat_100g': 4,
-            'saturated-fat_100g': 2.5,
-            'carbohydrates_100g': 18,
-            'sugars_100g': 1.5,
-            'fiber_100g': 4.5,
-            'proteins_100g': 8,
-            'salt_100g': 0.6
-        },
-        zutaten: [
-            { menge: 200, einheit: "g", name: "Rote Linsen" },
-            { menge: 400, einheit: "ml", name: "Kokosmilch" },
-            { menge: 1, einheit: "Stk.", name: "Zwiebel" },
-            { menge: 2, einheit: "Zehen", name: "Knoblauch" },
-            { menge: 1, einheit: "EL", name: "Geriebener Ingwer" },
-            { menge: 1, einheit: "EL", name: "Currypulver" }
-        ],
-        beschreibung: `## Vorbereitung
-
-- [ ] Zwiebeln und Knoblauch fein hacken.
-- [ ] Ingwer fein reiben.
-- [ ] Linsen in einem Sieb gründlich waschen.
-
-## Zubereitung
-
-- [ ] Zwiebeln, Knoblauch und Ingwer in etwas Öl in einem Topf andünsten.
-- [ ] Currypulver hinzugeben und kurz mitrösten, bis es aromatisch duftet.
-- [ ] Die roten Linsen, Kokosmilch und ca. 200 ml Wasser dazugeben.
-- [ ] Bei mittlerer Hitze ca. 20 Minuten köcheln lassen, bis die Linsen weich sind und eine cremige Konsistenz entsteht.
-- [ ] Mit Salz, Pfeffer und etwas Zitronensaft abschmecken.`
-    },
-    "avocadotoast-003": {
-        id: "avocadotoast-003",
-        titel: "Avocado Toast",
-        kurzbeschreibung: "Schnell, gesund und lecker. Knuspriges Sauerteigbrot verfeinert mit Chili-Flocken und pochiertem Ei.",
-        schaerfe: 1,
-        kalorien: 310,
-        kosten: 1.80,
-        dauer: 10,
-        nutriScore: "B",
-        portionen: 1,
-        labels: ["Schnell", "Frühstück"],
-        naehrwerte: {
-            'energy-kcal_100g': 310,
-            'fat_100g': 18,
-            'saturated-fat_100g': 3.5,
-            'carbohydrates_100g': 24,
-            'sugars_100g': 1.8,
-            'fiber_100g': 6,
-            'proteins_100g': 11,
-            'salt_100g': 0.85
-        },
-        zutaten: [
-            { menge: 1, einheit: "Scheibe", name: "Sauerteigbrot" },
-            { menge: 0.5, einheit: "Stk.", name: "Avocado" },
-            { menge: 1, einheit: "Stk.", name: "Ei" },
-            { menge: 1, einheit: "Prise", name: "Chiliflocken" },
-            { menge: 1, einheit: "Prise", name: "Meersalz" }
-        ],
-        beschreibung: `## Zubereitung
-
-- [ ] Das Sauerteigbrot in einer Pfanne oder im Toaster knusprig rösten.
-- [ ] Die Avocado halbieren, den Kern entfernen und das Fruchtfleisch in einer Schüssel mit einer Gabel zerdrücken. Mit etwas Salz und Zitronensaft würzen.
-- [ ] Das Ei nach Wunsch kochen (pochiert, Spiegelei oder hartgekocht).
-- [ ] Die Avocado-Creme großzügig auf dem Brot verteilen, das Ei darauflegen und mit Meersalz und Chiliflocken garnieren.`
-    },
-    "pilzrisotto-004": {
-        id: "pilzrisotto-004",
-        titel: "Pilz-Risotto",
-        kurzbeschreibung: "Cremiger Carnaroli-Reis mit aromatischen Waldpilzen, frischem Thymian und fein geriebenem Parmesan.",
-        schaerfe: 0,
-        kalorien: 520,
-        kosten: 3.20,
-        dauer: 40,
-        nutriScore: "B",
-        portionen: 2,
-        labels: ["Cremig", "Pilze"],
-        naehrwerte: {
-            'energy-kcal_100g': 260,
-            'fat_100g': 8,
-            'saturated-fat_100g': 3,
-            'carbohydrates_100g': 38,
-            'sugars_100g': 1.1,
-            'fiber_100g': 2,
-            'proteins_100g': 7,
-            'salt_100g': 0.75
-        },
-        zutaten: [
-            { menge: 150, einheit: "g", name: "Risottoreis (Arborio)" },
-            { menge: 200, einheit: "g", name: "Gemischte Pilze (Champignons, etc.)" },
-            { menge: 1, einheit: "Stk.", name: "Schalotte" },
-            { menge: 50, einheit: "ml", name: "Weißwein" },
-            { menge: 500, einheit: "ml", name: "Gemüsebrühe" },
-            { menge: 30, einheit: "g", name: "Parmesan" }
-        ],
-        beschreibung: `## Zubereitung
-
-- [ ] Schalotte fein würfeln. Pilze putzen und in Scheiben schneiden. Gemüsebrühe in einem separaten Topf erhitzen.
-- [ ] Die Pilze in einer Pfanne scharf anbraten, dann beiseite stellen.
-- [ ] Schalotten in Olivenöl dünsten, den Risottoreis hinzugeben und glasig dünsten.
-- [ ] Mit Weißwein ablöschen und vollständig einkochen lassen.
-- [ ] Nach und nach die heiße Gemüsebrühe schöpflöffelweise dazugeben, dabei ständig rühren. Erst neue Brühe zugießen, wenn der Reis die vorherige aufgenommen hat.
-- [ ] Nach ca. 20 Minuten (der Reis sollte al dente sein) Parmesan und angebratene Pilze unterrühren. Pfanne vom Herd nehmen und abgedeckt 2 Minuten ruhen lassen.`
-    }
-};
+const DEFAULT_RECIPES = {};
 
 // ============================================================
 // STATE
@@ -277,6 +115,25 @@ async function loadRecipesFromFirebase() {
     loadRecipesFromCache();
     loadLabelsFromCache();
 
+    // Bereinige vorgerfertigte Standardrezepte falls vorhanden
+    const defaultIds = ["carbonara-001", "linsendal-002", "avocadotoast-003", "pilzrisotto-004"];
+    let cleanedAny = false;
+    defaultIds.forEach(id => {
+        if (recipes[id]) {
+            delete recipes[id];
+            cleanedAny = true;
+            // Aus Firebase löschen
+            fetch(`${FIREBASE_URL}/recipes/${id}.json`, { method: 'DELETE' })
+                .catch(err => console.warn("Fehler beim Löschen des Standardrezepts:", err));
+        }
+    });
+    if (cleanedAny) {
+        localStorage.setItem('recipes_cache', JSON.stringify(recipes));
+        renderRecipesList();
+        updateRecentList();
+        setupSearch();
+    }
+
     // Lade globale Labels
     try {
         const labelsRes = await fetch(`${FIREBASE_URL}/labels.json`);
@@ -302,6 +159,15 @@ async function loadRecipesFromFirebase() {
             await seedDefaultRecipes();
             return;
         }
+
+        // Bereinige Standardrezepte aus Firebase-Antwort
+        defaultIds.forEach(id => {
+            if (data[id]) {
+                delete data[id];
+                // Synchron aus Firebase entfernen
+                fetch(`${FIREBASE_URL}/recipes/${id}.json`, { method: 'DELETE' }).catch(e => {});
+            }
+        });
 
         // RECONCILIATION: Wenn der lokale Cache Änderungen hat, die nicht auf Firebase sind,
         // behalten wir die lokale Version und synchronisieren sie zurück zu Firebase.
