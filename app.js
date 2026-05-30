@@ -2029,6 +2029,16 @@ async function deleteGlobalLabel(label) {
     }
 }
 
+// Vorwärmen des Firebase-Suchindex, um Kaltstarts bei der ersten Suche zu verhindern
+function prewarmFirebaseSearchIndex() {
+    console.log("Wärme Firebase-Suchindex vor...");
+    fetch(`${FIREBASE_URL}/.json?orderBy="product_name"&limitToFirst=1`)
+        .then(res => {
+            if (res.ok) console.log("Firebase-Suchindex erfolgreich vorgewärmt.");
+        })
+        .catch(err => console.warn("Fehler beim Vorwärmen des Firebase-Index:", err));
+}
+
 // ============================================================
 // INITIALIZATION
 // ============================================================
@@ -2036,6 +2046,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (typeof feather !== 'undefined') feather.replace();
 
     loadRecipesFromFirebase();
+    prewarmFirebaseSearchIndex();
 
     // Hub-Navigation
     document.getElementById('btn-scan')?.addEventListener('click', () => alert('Kassenzettel scannen steht erst in der Pro-Version zur Verfügung.'));
