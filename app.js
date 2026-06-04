@@ -279,6 +279,21 @@ async function saveRecipeToFirebase(recipe) {
     }
 }
 
+function formatDuration(minutes) {
+    if (minutes === undefined || minutes === null || isNaN(minutes) || minutes <= 0) return '—';
+    const min = parseInt(minutes);
+    if (min < 60) {
+        return `${min}min`;
+    } else {
+        const h = Math.floor(min / 60);
+        const m = min % 60;
+        if (m === 0) {
+            return `${h}h`;
+        }
+        return `${h}h ${m}min`;
+    }
+}
+
 // ============================================================
 // NUTRI-SCORE CALCULATION & HELPER
 // ============================================================
@@ -286,21 +301,44 @@ const NUTRI_COLORS = { A: 'nutri-seg-a', B: 'nutri-seg-b', C: 'nutri-seg-c', D: 
 const NUTRI_ORDER = ['A', 'B', 'C', 'D', 'E'];
 
 function scoreToLetter(score) {
-    if (score === null || score === undefined) return 'C';
-    if (score <= -1) return 'A';
-    if (score <= 2) return 'B';
-    if (score <= 10) return 'C';
-    if (score <= 18) return 'D';
+    if (score === null || score === undefined || score === '' || isNaN(score)) return null;
+    const num = parseFloat(score);
+    if (num <= -1) return 'A';
+    if (num <= 2) return 'B';
+    if (num <= 10) return 'C';
+    if (num <= 18) return 'D';
     return 'E';
+}
+
+function letterToNutriScoreValue(letter) {
+    if (!letter) return null;
+    const l = letter.trim().toUpperCase();
+    if (l === 'A') return 1;
+    if (l === 'B') return 2;
+    if (l === 'C') return 3;
+    if (l === 'D') return 4;
+    if (l === 'E') return 5;
+    return null;
+}
+
+function nutriScoreValueToLetter(value) {
+    const v = Math.round(value);
+    if (v === 1) return 'A';
+    if (v === 2) return 'B';
+    if (v === 3) return 'C';
+    if (v === 4) return 'D';
+    if (v === 5) return 'E';
+    return null;
 }
 
 function applyNutriScore(score) {
     const scaleEl = document.getElementById('rv-nutriscore');
     if (!scaleEl) return;
-    const upper = (score || 'C').toUpperCase();
-    scaleEl.dataset.score = upper;
+    const upper = score ? score.trim().toUpperCase() : '';
+    const isValid = ['A', 'B', 'C', 'D', 'E'].includes(upper);
+    scaleEl.dataset.score = isValid ? upper : '';
     scaleEl.querySelectorAll('.nutri-seg').forEach(seg => {
-        seg.classList.toggle('active', seg.dataset.letter === upper);
+        seg.classList.toggle('active', isValid && seg.dataset.letter === upper);
     });
 }
 
@@ -433,7 +471,12 @@ function convertIngredientToGrams(menge, einheit, stkInGrams) {
 }
 
 function recalculateRecipeNutrition(recipe) {
-    if (!recipe.zutaten || recipe.zutaten.length === 0) return;
+    if (!recipe.zutaten || recipe.zutaten.length === 0) {
+        recipe.naehrwerte = null;
+        recipe.kalorien = 0;
+        recipe.nutriScore = null;
+        return;
+    }
 
     let hasBarcodedIngredients = false;
 
@@ -459,21 +502,25 @@ function recalculateRecipeNutrition(recipe) {
     let scoreWeightTotal = 0;
 
     recipe.zutaten.forEach(z => {
-        if (z.naehrwerte) {
-            const grams = convertIngredientToGrams(z.menge, z.einheit, z.stkInGrams);
-            if (grams > 0) {
-                for (const key in totalNutrients) {
-                    if (z.naehrwerte[key] !== undefined && z.naehrwerte[key] !== null && !isNaN(z.naehrwerte[key])) {
-                        hasBarcodedIngredients = true;
-                        totalNutrients[key] += z.naehrwerte[key] * (grams / 100);
-                        weightForNutrient[key] += grams;
-                    }
-                }
+        const grams = convertIngredientToGrams(z.menge, z.einheit, z.stkInGrams);
 
-                if (z.nutriScoreValue !== undefined && z.nutriScoreValue !== null) {
-                    weightedScoreSum += z.nutriScoreValue * grams;
-                    scoreWeightTotal += grams;
+        if (z.naehrwerte && grams > 0) {
+            for (const key in totalNutrients) {
+                if (z.naehrwerte[key] !== undefined && z.naehrwerte[key] !== null && !isNaN(z.naehrwerte[key])) {
+                    hasBarcodedIngredients = true;
+                    totalNutrients[key] += z.naehrwerte[key] * (grams / 100);
+                    weightForNutrient[key] += grams;
                 }
+            }
+        }
+
+        // Nutri-Score: Zutat muss mindestens 30g wiegen
+        if (grams >= 30 && z.nutriscore_score !== undefined && z.nutriscore_score !== null) {
+            const letter = scoreToLetter(z.nutriscore_score);
+            const val = letterToNutriScoreValue(letter);
+            if (val !== null) {
+                weightedScoreSum += val * grams;
+                scoreWeightTotal += grams;
             }
         }
     });
@@ -499,17 +546,26 @@ function recalculateRecipeNutrition(recipe) {
                 kcalEl.textContent = recipe.kalorien;
             }
         }
+    }
 
-        // Berechne gewichteten Nutri-Score
-        if (scoreWeightTotal > 0) {
-            const avgScore = Math.round(weightedScoreSum / scoreWeightTotal);
-            recipe.nutriScore = scoreToLetter(avgScore);
-        }
+    // Berechne gewichteten Nutri-Score (auch unabhängig von Barcoded-Ingredients, da nun rein manuell/buchstabenbasiert)
+    if (scoreWeightTotal > 0) {
+        const avgScore = weightedScoreSum / scoreWeightTotal;
+        recipe.nutriScore = nutriScoreValueToLetter(avgScore);
+    } else {
+        recipe.nutriScore = null;
     }
 }
 
 function recalculateRecipeCost(recipe) {
-    if (!recipe.zutaten || recipe.zutaten.length === 0) return;
+    if (!recipe.zutaten || recipe.zutaten.length === 0) {
+        recipe.kosten = 0;
+        const costEl = document.getElementById('rv-kosten');
+        if (costEl) {
+            costEl.textContent = '0.00';
+        }
+        return;
+    }
     let totalCost = 0;
     let hasPricedIngredients = false;
 
@@ -525,7 +581,8 @@ function recalculateRecipeCost(recipe) {
         recipe.kosten = Math.round(totalCost * 100) / 100;
         const costEl = document.getElementById('rv-kosten');
         if (costEl) {
-            costEl.textContent = recipe.kosten.toFixed(2);
+            const portionen = Math.max(1, recipe.portionen || 1);
+            costEl.textContent = (recipe.kosten / portionen).toFixed(2);
         }
     }
 }
@@ -707,13 +764,16 @@ function renderIngredients(zutaten, curPort, basePort) {
             selectOptionsHtml += `<option value="${u}" ${z.einheit === u ? 'selected' : ''}>${u}</option>`;
         });
 
+        const baseGrams = convertIngredientToGrams(z.menge, z.einheit, z.stkInGrams);
         const hasKcal = z.naehrwerte && z.naehrwerte['energy-kcal_100g'] !== undefined && z.naehrwerte['energy-kcal_100g'] !== null && z.naehrwerte['energy-kcal_100g'] > 0;
         const hasQty = z.product_quantity !== undefined && z.product_quantity !== null && z.product_quantity > 0;
         const hasPrice = z.preisProKg !== undefined && z.preisProKg !== null && z.preisProKg > 0;
-        const isMissingInfo = !hasKcal || !hasQty || !hasPrice;
+        const letter = scoreToLetter(z.nutriscore_score);
+        const hasNutri = (baseGrams < 30) || (letter !== null && ['A', 'B', 'C', 'D', 'E'].includes(letter));
+        const isMissingInfo = !hasKcal || !hasQty || !hasPrice || !hasNutri;
 
         const asteriskHtml = isMissingInfo 
-            ? `<span class="ingredient-missing-asterisk" style="color: #cbd5e1; margin-left: 4px; font-weight: bold; cursor: help;" title="Unvollständige Daten (Kcal, Menge oder Preis fehlt)">*</span>`
+            ? `<span class="ingredient-missing-asterisk" style="color: #cbd5e1; margin-left: 4px; font-weight: bold; cursor: help;" title="Unvollständige Daten (Kcal, Menge, Preis oder Nutri-Score fehlt)">*</span>`
             : '';
 
         li.innerHTML = `
@@ -799,15 +859,22 @@ function syncIngredientsFromDOM() {
         let existingPreisProKg = null;
         let existingProductQuantity = null;
         let existingBrands = null;
+        let existingNutriscoreScore = null;
         if (!isNaN(idx) && currentRecipe.zutaten[idx]) {
             existingStkGrams = currentRecipe.zutaten[idx].stkInGrams;
             existingPreisProKg = currentRecipe.zutaten[idx].preisProKg;
             existingProductQuantity = currentRecipe.zutaten[idx].product_quantity;
             existingBrands = currentRecipe.zutaten[idx].brands;
+            existingNutriscoreScore = currentRecipe.zutaten[idx].nutriscore_score;
         }
 
+        const domMenge = parseFloat(li.querySelector('.zutat-menge').textContent) || 0;
+        const baseMenge = (currentPortion > 0 && basePortion > 0)
+            ? (domMenge * basePortion / currentPortion)
+            : domMenge;
+
         return {
-            menge: parseFloat(li.querySelector('.zutat-menge').textContent) || 0,
+            menge: Math.round(baseMenge * 100) / 100,
             einheit: unit,
             name: li.querySelector('.zutat-name').textContent.trim(),
             barcode: li.dataset.barcode || null,
@@ -815,7 +882,8 @@ function syncIngredientsFromDOM() {
             stkInGrams: existingStkGrams || parseFloat(li.dataset.stkInGrams) || null,
             preisProKg: existingPreisProKg || parseFloat(li.dataset.preisProKg) || null,
             product_quantity: existingProductQuantity || parseFloat(li.dataset.productQuantity) || null,
-            brands: existingBrands || li.dataset.brands || null
+            brands: existingBrands || li.dataset.brands || null,
+            nutriscore_score: existingNutriscoreScore !== undefined && existingNutriscoreScore !== null ? existingNutriscoreScore : null
         };
     });
 }
@@ -838,16 +906,39 @@ function loadRecipe(recipe) {
     currentRecipe.kalorien = recipe.kalorien || 0;
     currentRecipe.kosten = recipe.kosten || 0;
     currentRecipe.dauer = recipe.dauer || 0;
-    currentRecipe.nutriScore = recipe.nutriScore || 'C';
+    currentRecipe.nutriScore = recipe.nutriScore || null;
     currentRecipe.zutaten = recipe.zutaten || [];
-    currentRecipe.beschreibung = recipe.beschreibung || '## Zubereitung\n\n- [ ] Erster Zubereitungsschritt\n';
+    currentRecipe.naehrwerte = recipe.naehrwerte || null;
+    currentRecipe.beschreibung = recipe.beschreibung !== undefined && recipe.beschreibung !== null ? recipe.beschreibung : '';
     currentRecipe.labels = recipe.labels || [];
+
+    // Ensure all loaded ingredients have nutriscore_score resolved and clean up deprecated fields
+    if (currentRecipe.zutaten) {
+        currentRecipe.zutaten.forEach(z => {
+            if (z.nutriscore_score === undefined || z.nutriscore_score === null) {
+                const letter = z.nutriScoreLetter || 
+                               z.nutriscore_grade || 
+                               (z.nutriScoreValue !== undefined && z.nutriScoreValue !== null ? scoreToLetter(z.nutriScoreValue) : null);
+                if (letter) {
+                    const upper = letter.toUpperCase();
+                    z.nutriscore_score = upper === 'A' ? -5 : (upper === 'B' ? 0 : (upper === 'C' ? 5 : (upper === 'D' ? 15 : (upper === 'E' ? 25 : null))));
+                } else {
+                    z.nutriscore_score = null;
+                }
+            }
+            // Entferne redundante Alt-Felder aus dem Speicherobjekt
+            delete z.nutriScoreLetter;
+            delete z.nutriScoreValue;
+            delete z.nutriscore_grade;
+        });
+    }
 
     document.getElementById('rv-titel').textContent = currentRecipe.titel;
     document.getElementById('rv-kurzbeschreibung').textContent = currentRecipe.kurzbeschreibung;
     document.getElementById('rv-kalorien').textContent = currentRecipe.kalorien;
-    document.getElementById('rv-kosten').textContent = currentRecipe.kosten.toFixed(2);
-    document.getElementById('rv-dauer').textContent = currentRecipe.dauer;
+    const portionen = Math.max(1, currentRecipe.portionen || 1);
+    document.getElementById('rv-kosten').textContent = (currentRecipe.kosten / portionen).toFixed(2);
+    document.getElementById('rv-dauer').textContent = formatDuration(currentRecipe.dauer);
     document.getElementById('rv-portionen').textContent = currentPortion;
     applyNutriScore(currentRecipe.nutriScore);
 
@@ -857,7 +948,7 @@ function loadRecipe(recipe) {
     renderLabels(currentRecipe.labels);
 
     // Event Listener für Always-Editable Felder
-    ['rv-titel', 'rv-kurzbeschreibung', 'rv-dauer'].forEach(id => {
+    ['rv-titel', 'rv-kurzbeschreibung'].forEach(id => {
         const el = document.getElementById(id);
         if (el) {
             el.oninput = () => triggerAutosave();
@@ -905,13 +996,17 @@ function syncAllToState() {
     const descEl = document.getElementById('rv-kurzbeschreibung');
     const kcalEl = document.getElementById('rv-kalorien');
     const dauerEl = document.getElementById('rv-dauer');
-    const kostenEl = document.getElementById('rv-kosten');
+    const nutriEl = document.getElementById('rv-nutriscore');
 
     currentRecipe.titel = titelEl ? titelEl.textContent.trim() : (currentRecipe.titel || '');
     currentRecipe.kurzbeschreibung = descEl ? descEl.textContent.trim() : (currentRecipe.kurzbeschreibung || '');
     currentRecipe.kalorien = kcalEl ? (parseFloat(kcalEl.textContent) || 0) : (currentRecipe.kalorien || 0);
-    currentRecipe.dauer = dauerEl ? (parseInt(dauerEl.textContent) || 0) : (currentRecipe.dauer || 0);
-    currentRecipe.kosten = kostenEl ? (parseFloat(kostenEl.textContent) || 0) : (currentRecipe.kosten || 0);
+    currentRecipe.dauer = currentRecipe.dauer || 0;
+
+    // Nutri-Score aus DOM zurücklesen (data-score Attribut)
+    if (nutriEl && nutriEl.dataset.score) {
+        currentRecipe.nutriScore = nutriEl.dataset.score;
+    }
 
     syncIngredientsFromDOM();
     syncPreparationToMarkdown();
@@ -920,6 +1015,9 @@ function syncAllToState() {
     recalculateRecipeNutrition(currentRecipe);
     recalculateRecipeCost(currentRecipe);
     updateNutritionDisplay(currentRecipe);
+
+    // Nutri-Score UI aktualisieren (nach Neuberechnung)
+    applyNutriScore(currentRecipe.nutriScore);
 }
 
 // ============================================================
@@ -941,11 +1039,45 @@ function saveManualPortions() {
     currentPortion = newVal;
     document.getElementById('rv-portionen').textContent = currentPortion;
 
+    recalculateRecipeCost(currentRecipe); // Re-calculate cost & update Cost/Portion badge
     updateNutritionDisplay(currentRecipe);
     renderIngredients(currentRecipe.zutaten, currentPortion, basePortion);
 
     closePortionModal();
     saveRecipeToFirebase(currentRecipe);
+}
+
+// ============================================================
+// DURATION SETTINGS MODAL
+// ============================================================
+function openDurationModal() {
+    const totalMinutes = currentRecipe.dauer || 0;
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    
+    document.getElementById('manual-duration-hours').value = hours > 0 ? hours : '';
+    document.getElementById('manual-duration-minutes').value = minutes > 0 ? minutes : '';
+    document.getElementById('duration-settings-modal').style.display = 'flex';
+}
+
+function closeDurationModal() {
+    document.getElementById('duration-settings-modal').style.display = 'none';
+}
+
+function saveManualDuration() {
+    const hours = parseInt(document.getElementById('manual-duration-hours').value) || 0;
+    const minutes = parseInt(document.getElementById('manual-duration-minutes').value) || 0;
+    
+    const totalMinutes = (hours * 60) + minutes;
+    currentRecipe.dauer = totalMinutes;
+    
+    const dauerEl = document.getElementById('rv-dauer');
+    if (dauerEl) {
+        dauerEl.textContent = formatDuration(totalMinutes);
+    }
+    
+    closeDurationModal();
+    saveCurrentRecipeImmediately();
 }
 
 // ============================================================
@@ -956,6 +1088,7 @@ function openIngredientModal(index) {
     const z = currentRecipe.zutaten[index];
     document.getElementById('modal-ingredient-name').textContent = z.name;
     document.getElementById('mi-barcode').value = z.barcode || '';
+    document.getElementById('mi-nutriscore').value = scoreToLetter(z.nutriscore_score) || '';
 
     const nw = z.naehrwerte || {};
     document.getElementById('mi-kcal').value = nw['energy-kcal_100g'] || 0;
@@ -1009,6 +1142,11 @@ function saveIngredientDetail() {
     const barcodeVal = document.getElementById('mi-barcode').value.trim();
     z.barcode = barcodeVal ? barcodeVal.replace(/[\.\#\$\[\]\/]/g, '_') : null;
 
+    const nutriVal = document.getElementById('mi-nutriscore').value.trim().toUpperCase();
+    z.nutriscore_score = ['A', 'B', 'C', 'D', 'E'].includes(nutriVal)
+        ? (nutriVal === 'A' ? -5 : (nutriVal === 'B' ? 0 : (nutriVal === 'C' ? 5 : (nutriVal === 'D' ? 15 : 25))))
+        : null;
+
     z.naehrwerte['energy-kcal_100g'] = parseFloat(document.getElementById('mi-kcal').value) || 0;
     z.naehrwerte['proteins_100g'] = parseFloat(document.getElementById('mi-proteins').value) || 0;
     z.naehrwerte['fat_100g'] = parseFloat(document.getElementById('mi-fat').value) || 0;
@@ -1050,7 +1188,10 @@ function saveIngredientDetail() {
             'fiber_100g': z.naehrwerte['fiber_100g'] || 0,
             'salt_100g': z.naehrwerte['salt_100g'] || 0,
             product_quantity: z.product_quantity || null,
-            preisProKg: z.preisProKg || null
+            preisProKg: z.preisProKg || null,
+            nutriScoreLetter: z.nutriScoreLetter || null,
+            nutriscore_grade: z.nutriScoreLetter ? z.nutriScoreLetter.toLowerCase() : null,
+            nutriscore_score: z.nutriScoreLetter === 'A' ? -5 : (z.nutriScoreLetter === 'B' ? 0 : (z.nutriScoreLetter === 'C' ? 5 : (z.nutriScoreLetter === 'D' ? 15 : (z.nutriScoreLetter === 'E' ? 25 : null))))
         };
 
         // Direkt unter Barcode abspeichern (Firebase-Suche greift automatisch darauf zu)
@@ -1382,13 +1523,26 @@ function addIngredientFromData(cleanBarcode, data) {
         'salt_100g': parseFloat(data['salt_100g']) || 0
     };
 
+    const rawScore = data.nutriscore_score !== undefined && data.nutriscore_score !== null
+        ? data.nutriscore_score
+        : (data.nutriScoreValue !== undefined && data.nutriScoreValue !== null ? data.nutriScoreValue : null);
+
+    let score = rawScore !== null ? parseFloat(rawScore) : null;
+    if (score === null) {
+        const letter = data.nutriScoreLetter || data.nutriscore_grade;
+        if (letter) {
+            const upper = letter.toUpperCase();
+            score = upper === 'A' ? -5 : (upper === 'B' ? 0 : (upper === 'C' ? 5 : (upper === 'D' ? 15 : (upper === 'E' ? 25 : null))));
+        }
+    }
+
     currentRecipe.zutaten.push({
         menge: 100,
         einheit: 'g',
         name: title,
         barcode: cleanBarcode,
         naehrwerte: naehrwerte,
-        nutriScoreValue: data.nutriScoreValue || null,
+        nutriscore_score: score,
         product_quantity: parseFloat(data.product_quantity) || null,
         preisProKg: parseFloat(data.preisProKg) || null,
         brands: brand
@@ -1735,7 +1889,7 @@ function renderRecipesList() {
                 <h3>${recipe.titel || 'Unbenanntes Rezept'}</h3>
                 <p>${recipe.kurzbeschreibung || 'Keine Beschreibung vorhanden'}</p>
                 <span class="recipe-meta">
-                    <i data-feather="clock"></i> ${recipe.dauer} Min. &bull; 🔥 ${recipe.kalorien} kcal &bull; 💶 ${costPerPortion} €
+                    <i data-feather="clock"></i> ${formatDuration(recipe.dauer)} &bull; 🔥 ${recipe.kalorien} kcal &bull; 💶 ${costPerPortion} €
                 </span>
             </div>
         `;
@@ -2080,6 +2234,10 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-close-portion-modal')?.addEventListener('click', closePortionModal);
     document.getElementById('btn-save-portions')?.addEventListener('click', saveManualPortions);
 
+    document.getElementById('badge-dauer')?.addEventListener('click', openDurationModal);
+    document.getElementById('btn-close-duration-modal')?.addEventListener('click', closeDurationModal);
+    document.getElementById('btn-save-duration')?.addEventListener('click', saveManualDuration);
+
     document.getElementById('btn-close-ingredient-modal')?.addEventListener('click', closeIngredientModal);
     document.getElementById('btn-save-ingredient-detail')?.addEventListener('click', saveIngredientDetail);
     document.getElementById('btn-delete-ingredient-detail')?.addEventListener('click', () => {
@@ -2404,20 +2562,11 @@ function createNewRecipe() {
         kalorien: 0,
         kosten: 0.00,
         dauer: 20,
-        nutriScore: 'C',
+        nutriScore: null,
         portionen: 2,
-        naehrwerte: {
-            'energy-kcal_100g': 0,
-            'fat_100g': 0,
-            'saturated-fat_100g': 0,
-            'carbohydrates_100g': 0,
-            'sugars_100g': 0,
-            'fiber_100g': 0,
-            'proteins_100g': 0,
-            'salt_100g': 0
-        },
+        naehrwerte: null,
         zutaten: [],
-        beschreibung: '## Zubereitung\n\n- [ ] Erster Zubereitungsschritt\n'
+        beschreibung: ''
     };
     saveRecipeToFirebase(newRecipe);
     showRecipeView(newRecipe);

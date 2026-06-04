@@ -237,10 +237,10 @@
                         <span class="badge-value" id="rv-kosten" data-field="kosten">0.00</span>
                     </div>
                     <!-- Dauer -->
-                    <div class="bento-box key-prop-badge" id="badge-dauer">
+                    <div class="bento-box key-prop-badge" id="badge-dauer" style="cursor: pointer;" title="Dauer bearbeiten">
                         <span class="badge-icon">⏱</span>
                         <span class="badge-label">Dauer</span>
-                        <span class="badge-value" id="rv-dauer" contenteditable="true" data-field="dauer">0</span>
+                        <span class="badge-value" id="rv-dauer" data-field="dauer">—</span>
                     </div>
                     <!-- Nutri-Score (typische Balken-Darstellung) -->
                     <div class="bento-box key-prop-badge nutri-badge" id="badge-nutri">
@@ -475,6 +475,30 @@
         </div>
     </div>
 
+    <!-- Dauer-Einstellungen Modal -->
+    <div id="duration-settings-modal" class="modal-backdrop" style="display: none;">
+        <div class="modal-content" style="max-width: 320px;">
+            <button class="modal-close-btn" id="btn-close-duration-modal">&times;</button>
+            <h2 style="margin-bottom: 12px;">Dauer anpassen</h2>
+            <p class="modal-subtitle">Gib die Arbeitszeit/Dauer für dieses Rezept an.</p>
+            <div style="display: flex; gap: 12px; margin-top: 20px; justify-content: center; align-items: center;">
+                <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+                    <input type="number" id="manual-duration-hours" min="0" step="1" placeholder="0"
+                        style="width: 70px; padding: 10px; border-radius: 12px; border: 1px solid #e2e8f0; font-size: 1.2rem; text-align: center;">
+                    <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 500;">Stunden</span>
+                </div>
+                <span style="font-size: 1.2rem; font-weight: bold; margin-bottom: 20px;">:</span>
+                <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+                    <input type="number" id="manual-duration-minutes" min="0" max="59" step="1" placeholder="0"
+                        style="width: 70px; padding: 10px; border-radius: 12px; border: 1px solid #e2e8f0; font-size: 1.2rem; text-align: center;">
+                    <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 500;">Minuten</span>
+                </div>
+            </div>
+            <button class="action-btn btn-save" id="btn-save-duration"
+                style="width: 100%; margin-top: 24px; justify-content: center;">Übernehmen & Speichern</button>
+        </div>
+    </div>
+
     <!-- Zutat-Details Modal -->
     <div id="ingredient-detail-modal" class="modal-backdrop" style="display: none;">
         <div class="modal-content" style="max-width: 440px;">
@@ -528,6 +552,10 @@
                 <div class="modal-field">
                     <label>Preis / Produkt (€)</label>
                     <input type="number" id="mi-preis" step="0.01">
+                </div>
+                <div class="modal-field">
+                    <label>Nutri-Score (A-E)</label>
+                    <input type="text" id="mi-nutriscore" placeholder="z. B. A" maxlength="1" style="text-transform: uppercase;">
                 </div>
             </div>
 
@@ -608,7 +636,7 @@
     <div id="toast-container" class="toast-container"></div>
 
     <!-- Eigene Logik mit Cache-Buster für mobile Endgeräte -->
-    <script src="app.js?v=32"></script>
+    <script src="app.js?v=38"></script>
 </body>
 
 </html>
