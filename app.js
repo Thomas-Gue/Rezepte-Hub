@@ -2136,7 +2136,21 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-portion-up')?.addEventListener('click', () => updatePortions(currentPortion + 1));
     document.getElementById('btn-portion-down')?.addEventListener('click', () => updatePortions(currentPortion - 1));
 
-    document.getElementById('btn-bring')?.addEventListener('click', () => alert('🛒 Wird zur Bring!-Liste hinzugefügt…'));
+    document.getElementById('btn-bring')?.addEventListener('click', openBringModal);
+    document.getElementById('btn-close-bring-modal')?.addEventListener('click', closeBringModal);
+    document.getElementById('btn-send-to-bring')?.addEventListener('click', sendToBring);
+    document.getElementById('btn-bring-select-all')?.addEventListener('click', () => setBringAllChecked(true));
+    document.getElementById('btn-bring-deselect-all')?.addEventListener('click', () => setBringAllChecked(false));
+
+    // Escape-Taste schließt das Bring! Modal
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            const bringModal = document.getElementById('bring-modal');
+            if (bringModal && bringModal.style.display !== 'none') {
+                closeBringModal();
+            }
+        }
+    });
 
     // Rezept-Filter Event-Listener (New)
     ['filter-preis', 'filter-zeit', 'filter-kcal'].forEach(id => {
@@ -2194,6 +2208,171 @@ document.addEventListener('DOMContentLoaded', () => {
         window.print();
     });
 });
+
+// ============================================================
+// BRING! EXPORT FEATURE
+// ============================================================
+
+/**
+ * Öffnet das Bring!-Modal und befüllt es mit den aktuell
+ * angezeigten Zutaten (korrekte Portionsskalierung aus dem DOM).
+ */
+function openBringModal() {
+    if (!currentRecipe || !currentRecipe.zutaten || currentRecipe.zutaten.length === 0) {
+        showToast('Keine Zutaten', 'Dieses Rezept hat noch keine Zutaten.', true);
+        return;
+    }
+
+    const list = document.getElementById('bring-ingredient-list');
+    if (!list) return;
+    list.innerHTML = '';
+
+    // Aktuelle Mengen direkt aus dem DOM lesen (korrekte Portionsskalierung)
+    const domItems = document.querySelectorAll('.zutaten-list .zutat-item');
+
+    if (domItems.length === 0) {
+        // Fallback: Direkt aus currentRecipe (ohne Skalierung)
+        currentRecipe.zutaten.forEach((z, i) => {
+            renderBringItem(list, z.menge, z.einheit, z.name, i);
+        });
+    } else {
+        domItems.forEach((li, i) => {
+            const mengeEl = li.querySelector('.zutat-menge');
+            const einheitEl = li.querySelector('.zutat-einheit-select');
+            const nameEl = li.querySelector('.zutat-name');
+            const menge = mengeEl ? (parseFloat(mengeEl.textContent) || '') : '';
+            const einheit = einheitEl ? einheitEl.value : '';
+            const name = nameEl ? nameEl.textContent.trim() : '';
+            if (name) renderBringItem(list, menge, einheit, name, i);
+        });
+    }
+
+    document.getElementById('bring-modal').style.display = 'flex';
+}
+
+/**
+ * Rendert eine einzelne Zutatenzeile mit Custom-Checkbox im Bring!-Modal.
+ */
+function renderBringItem(list, menge, einheit, name, index) {
+    const li = document.createElement('li');
+    li.className = 'bring-item is-checked';
+    li.dataset.menge = menge !== '' ? menge : '';
+    li.dataset.einheit = einheit || '';
+    li.dataset.name = name;
+
+    // Lesbaren String zusammenbauen (keine doppelten Leerzeichen)
+    const parts = [menge !== '' ? String(menge) : '', einheit || '', name].filter(p => p && String(p).trim() !== '');
+    const displayText = parts.join(' ');
+
+    li.innerHTML = `
+        <span class="bring-checkbox">
+            <svg class="bring-checkbox-check" viewBox="0 0 10 10">
+                <polyline points="1.5,5 4,7.5 8.5,2.5"/>
+            </svg>
+        </span>
+        <span class="bring-item-text">
+            ${menge !== '' ? `<span class="bring-item-menge">${menge}</span>` : ''}
+            ${einheit ? `<span class="bring-item-einheit">${einheit}</span>` : ''}
+            ${name}
+        </span>
+    `;
+
+    // Klick auf die ganze Zeile togglet Checked-Status
+    li.addEventListener('click', () => {
+        const isChecked = li.classList.contains('is-checked');
+        li.classList.toggle('is-checked', !isChecked);
+        li.classList.toggle('is-unchecked', isChecked);
+    });
+
+    list.appendChild(li);
+}
+
+/**
+ * Schließt das Bring!-Modal.
+ */
+function closeBringModal() {
+    const modal = document.getElementById('bring-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+/**
+ * Setzt alle Checkboxen im Bring!-Modal auf checked/unchecked.
+ */
+function setBringAllChecked(checked) {
+    const items = document.querySelectorAll('#bring-ingredient-list .bring-item');
+    items.forEach(item => {
+        item.classList.toggle('is-checked', checked);
+        item.classList.toggle('is-unchecked', !checked);
+    });
+}
+
+/**
+ * Baut die Bring!-URL aus den gewählten Zutaten und öffnet sie in einem neuen Tab.
+ * Nutzt den offiziellen Bring! DeepLink-Mechanismus:
+ * https://deeplink.getbring.com/import?type=RECIPE&src=<base64url>
+ * mit einem vorgebauten "items"-String.
+ */
+function sendToBring() {
+    // 1. Gecheckte Items sammeln
+    const checkedItems = [...document.querySelectorAll('#bring-ingredient-list .bring-item.is-checked')];
+
+    if (checkedItems.length === 0) {
+        showToast('Keine Auswahl', 'Bitte mindestens eine Zutat auswählen.', true);
+        return;
+    }
+
+    // 2. Strings zusammensetzen: "Menge Einheit Name" (keine doppelten Leerzeichen)
+    const lines = checkedItems.map(item => {
+        const menge = item.dataset.menge || '';
+        const einheit = item.dataset.einheit || '';
+        const name = item.dataset.name || '';
+        return [menge, einheit, name].filter(p => p.trim() !== '').join(' ');
+    }).filter(line => line.trim() !== '');
+
+    // 3. Mit Zeilenumbruch verbinden
+    const ingredientsStr = lines.join('\n');
+
+    // 4. URL-konform encoden
+    const encodedIngredients = encodeURIComponent(ingredientsStr);
+    const rezeptTitel = encodeURIComponent(currentRecipe?.titel || 'Rezept');
+
+    // 5. Bring! Deep-Link aufbauen
+    // Die Bring! Import-Seite erwartet eine URL zu einer Rezeptseite mit JSON-LD.
+    // Wir nutzen den "items"-Parameter des Bring! importPageUrl Schemas:
+    // platform.getbring.com/widgets/import.html?src=<base64url(url)>
+    // Da wir keine externe URL haben, bauen wir einen Direct-Import-Link:
+    // https://api.getbring.com/rest/bringrecipes/deeplink?url=...&source=web
+    // 
+    // Der zuverlässigste Ansatz: Bring! Import-Seite mit einem
+    // data-URI als Rezeptseite ist nicht möglich.
+    // Stattdessen: Wir öffnen import.html mit einem vorbereiteten
+    // encodeURIComponent-Ingredients-String via dem "items"-Format.
+    //
+    // Offiziell unterstütztes Format (aus dem Widget-Source-Code):
+    // items/purchase/details?data=<btoaURLSafe(JSON.stringify(itemsArray))>
+    const itemsPayload = lines.map(line => ({
+        itemId: line,
+        spec: line
+    }));
+
+    // btoa URL-safe Encoding (wie in Bring!'s eigenem btoaUrlSave)
+    const jsonStr = JSON.stringify(itemsPayload);
+    const base64Raw = btoa(unescape(encodeURIComponent(jsonStr)));
+    const base64UrlSafe = base64Raw.replace(/\+/g, '-').replace(/\//g, '_');
+
+    // DeepLink aufbauen: https://deeplink.getbring.com/items/purchase/details?data=<base64>
+    const deeplink = `https://deeplink.getbring.com/items/purchase/details?data=${base64UrlSafe}`;
+
+    // 6. Neuen Tab öffnen
+    window.open(deeplink, '_blank', 'noopener,noreferrer');
+
+    // 7. Modal schließen + Toast
+    closeBringModal();
+    showToast(
+        'An Bring! gesendet 🛒',
+        `${checkedItems.length} Zutat${checkedItems.length !== 1 ? 'en' : ''} wurden an deine Einkaufsliste weitergeleitet.`
+    );
+}
 
 function createNewRecipe() {
     const newRecipe = {

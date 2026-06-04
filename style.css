@@ -2538,3 +2538,210 @@ body {
         line-height: 1.3 !important;
     }
 }
+
+/* ============================================================
+   BRING! EXPORT FEATURE
+   ============================================================ */
+
+/* ── Button: Bring! SVG Logo ── */
+.bring-logo-svg {
+    width: 14px;
+    height: 19px;
+    flex-shrink: 0;
+    display: block;
+}
+
+/* Bag body */
+.bring-svg-bag {
+    fill: #2d4a3e; /* dunkles Teal für den Beutel */
+}
+
+/* Side panel (leicht heller) */
+.bring-svg-side {
+    fill: #3d7a62;
+}
+
+/* Checkmark */
+.bring-svg-check {
+    fill: #4ecb94; /* Bring! Grün */
+    stroke: none;
+}
+
+/* ── Button Hover: Anheben statt Blau ── */
+.btn-bring {
+    padding: 7px 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-bring:hover {
+    background: #d8dde3 !important;   /* leicht dunkler als --bg-color */
+    color: var(--text-main) !important;
+    border-color: #b8c0cc !important;
+    transform: translateY(-2px) !important;
+    box-shadow: var(--shadow-sm) !important;
+}
+
+/* ── Bring! Modal Header ── */
+.bring-modal-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 20px;
+    padding-right: 40px; /* Platz für den Close-Button */
+}
+
+.bring-header-logo {
+    width: 32px;
+    height: 44px;
+    flex-shrink: 0;
+}
+
+/* ── Bring! Zutaten-Liste ── */
+.bring-ingredient-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 4px 0;
+    max-height: 320px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #e2e8f0 transparent;
+}
+
+.bring-ingredient-list::-webkit-scrollbar {
+    width: 4px;
+}
+
+.bring-ingredient-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.bring-ingredient-list::-webkit-scrollbar-thumb {
+    background: #e2e8f0;
+    border-radius: 2px;
+}
+
+/* ── Einzelne Zeile ── */
+.bring-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 9px 10px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: transform 0.15s ease, opacity 0.2s ease, background 0.15s ease;
+    user-select: none;
+}
+
+.bring-item:hover {
+    transform: translateY(-1px);
+    background: var(--bg-color);
+}
+
+/* Abgewählte Zeile: Ausfaden */
+.bring-item.is-unchecked {
+    opacity: 0.45;
+}
+
+/* ── Custom Checkbox ── */
+.bring-checkbox {
+    width: 18px;
+    height: 18px;
+    border: 2px solid #cbd5e1;
+    border-radius: 5px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, border-color 0.15s;
+    position: relative;
+}
+
+/* Checked-Zustand: Teal (passend zur Zutaten-Farbe des Designs) */
+.bring-item.is-checked .bring-checkbox {
+    background: var(--accent-dark);
+    border-color: var(--accent-dark);
+}
+
+/* SVG-Checkmark innerhalb der Custom Checkbox */
+.bring-checkbox-check {
+    display: none;
+    width: 10px;
+    height: 10px;
+    stroke: #fff;
+    stroke-width: 2.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    fill: none;
+}
+
+.bring-item.is-checked .bring-checkbox-check {
+    display: block;
+}
+
+/* Zutat-Text */
+.bring-item-text {
+    flex: 1;
+    font-size: 0.88rem;
+    color: var(--text-main);
+    line-height: 1.4;
+}
+
+.bring-item-menge {
+    font-weight: 700;
+    color: var(--accent-dark);
+    margin-right: 2px;
+}
+
+.bring-item-einheit {
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    margin-right: 4px;
+}
+
+/* ── Alle aus-/abwählen Zeile ── */
+.bring-select-all-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+    margin-bottom: 16px;
+    padding-top: 10px;
+    border-top: 1px solid #f1f5f9;
+}
+
+.bring-select-toggle {
+    background: none;
+    border: none;
+    font-family: inherit;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 4px;
+    transition: color 0.15s, background 0.15s;
+}
+
+.bring-select-toggle:hover {
+    color: var(--accent-dark);
+    background: var(--bg-color);
+}
+
+/* ── Action-Button Bereich ── */
+.bring-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 4px;
+}
+
+/* "An Bring! senden" Button schwebt wie Bento-Boxen */
+.bring-send-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.bring-send-btn:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-lg);
+}
