@@ -2321,21 +2321,24 @@ function sendToBring() {
         return;
     }
 
-    // 1. Zutaten als recipeIngredient Strings (Schema.org Format)
-    const recipeIngredients = checkedItems.map(item => {
+    // 1. Zutaten in Bring!'s Parser-Response-Format aufbauen
+    //    (Exakt das Format das api.getbring.com/rest/bringrecipes/parser zurückgibt)
+    const items = checkedItems.map(item => {
         const menge = item.dataset.menge || '';
         const einheit = item.dataset.einheit || '';
         const name = item.dataset.name || '';
-        return [menge, einheit, name].filter(p => p.trim() !== '').join(' ');
+        const spec = [menge, einheit].filter(p => p.trim() !== '').join(' ');
+        const obj = { itemId: name };
+        if (spec) obj.spec = spec;
+        return obj;
     });
 
-    // 2. Schema.org JSON-LD (wie es Chefkoch auf seinen Seiten hat)
+    // 2. Rezept-Daten im Parser-Response-Format (wie Chefkoch-Parser zurückgibt)
     const recipeData = {
-        "@context": "https://schema.org",
-        "@type": "Recipe",
-        "name": currentRecipe?.titel || 'Rezept',
-        "recipeIngredient": recipeIngredients,
-        "recipeYield": String(currentPortion || 1)
+        name: currentRecipe?.titel || 'Rezept',
+        items: items,
+        yield: String(currentPortion || 1),
+        baseQuantity: currentPortion || 1
     };
 
     // 3. Temporär in Firebase speichern (öffentliche URL für Bring!)
@@ -2359,7 +2362,7 @@ function sendToBring() {
         }
 
         // 5. Deep Link: type=RECIPE mit direkter Firebase-URL als src
-        //    Die App ruft diese URL ab und findet das Schema.org JSON-LD
+        //    Die App ruft diese URL ab und bekommt Daten im Parser-Response-Format
         const srcEncoded = btoaUrlSave(firebaseShareUrl);
         const deepLink = 'https://deeplink.getbring.com/import?type=RECIPE&src=' + srcEncoded;
 
