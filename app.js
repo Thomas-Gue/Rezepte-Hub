@@ -2307,12 +2307,11 @@ function setBringAllChecked(checked) {
 }
 
 /**
- * Exportiert Zutaten direkt zu Bring! – ohne Parser, ohne Server.
+ * Exportiert Zutaten zu Bring! über den bewährten RECIPE-Import.
  * 
- * Die Zutaten werden als JSON im Deep Link kodiert (items/purchase/details).
- * Der OneLink-Wrapper (enjoy.getbring.com) sorgt dafür, dass die App sich öffnet.
- * 
- * Encoding: btoaUTF8 aus Bring!'s eigenem Widget-Source (import.js).
+ * Der type=RECIPE OneLink öffnet die App korrekt im Rezept-Import-Bereich.
+ * Die Zutaten werden temporär in Firebase gespeichert (5 Min, dann auto-gelöscht),
+ * damit Bring!'s App sie unter einer öffentlichen URL abrufen kann.
  */
 function sendToBring() {
     const checkedItems = [...document.querySelectorAll('#bring-ingredient-list .bring-item.is-checked')];
@@ -2322,74 +2321,75 @@ function sendToBring() {
         return;
     }
 
-    // 1. Items im Bring!-Format aufbauen (itemId = Produktname, spec = Menge+Einheit)
-    const items = checkedItems.map(item => {
+    // 1. Zutaten als recipeIngredient Strings (Schema.org Format)
+    const recipeIngredients = checkedItems.map(item => {
         const menge = item.dataset.menge || '';
         const einheit = item.dataset.einheit || '';
         const name = item.dataset.name || '';
-        const spec = [menge, einheit].filter(p => p.trim() !== '').join(' ');
-        const obj = { itemId: name };
-        if (spec) obj.spec = spec;
-        return obj;
+        return [menge, einheit, name].filter(p => p.trim() !== '').join(' ');
     });
 
-    // 2. btoaUTF8 – exakt wie in Bring!'s import.js (für Umlaute: ä, ö, ü, ß)
-    function btoaUTF8(str) {
-        return btoa(str.replace(
-            /[\x80-\uD7FF\uDC00-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]?/g,
-            function(c) {
-                const code = c.charCodeAt(0);
-                if (code >= 0xD800 && code <= 0xDBFF) {
-                    const next = c.charCodeAt(1);
-                    if (next >= 0xDC00 && next <= 0xDFFF) {
-                        const cp = 1024 * (code - 0xD800) + next - 0xDC00 + 0x10000;
-                        return String.fromCharCode(
-                            0xF0 | (cp >>> 18), 0x80 | ((cp >>> 12) & 0x3F),
-                            0x80 | ((cp >>> 6) & 0x3F), 0x80 | (cp & 0x3F)
-                        );
-                    }
-                    return '\uFFFD';
-                }
-                if (code <= 0x7F) return c;
-                if (code <= 0x7FF) return String.fromCharCode(0xC0 | (code >>> 6), 0x80 | (code & 0x3F));
-                return String.fromCharCode(
-                    0xE0 | (code >>> 12), 0x80 | ((code >>> 6) & 0x3F), 0x80 | (code & 0x3F)
-                );
-            }
-        ));
-    }
+    // 2. Schema.org JSON-LD (wie es Chefkoch auf seinen Seiten hat)
+    const recipeData = {
+        "@context": "https://schema.org",
+        "@type": "Recipe",
+        "name": currentRecipe?.titel || 'Rezept',
+        "recipeIngredient": recipeIngredients,
+        "recipeYield": String(currentPortion || 1)
+    };
 
-    // 3. Deep Link bauen (wie createImportItemExtendedDeeplink im Widget)
-    const itemsJson = JSON.stringify(items);
-    const base64Data = btoaUTF8(itemsJson);
-    const deepLink = 'https://deeplink.getbring.com/items/purchase/details?data=' + base64Data;
+    // 3. Temporär in Firebase speichern (öffentliche URL für Bring!)
+    const shareKey = 'bring-' + Date.now();
+    const firebaseShareUrl = `${FIREBASE_URL}/${shareKey}.json`;
 
-    // 4. OneLink bauen (wie createFirebaseDynamicLink im Widget)
-    //    Bewiesenermaßen öffnet die App – jetzt mit Items-Deep-Link statt Recipe-Deep-Link
-    const params = new URLSearchParams();
-    params.append('deep_link_value', deepLink);
-    params.append('af_web_dp', deepLink);
-    params.append('bring_source', 'importWidget');
-    params.append('bring_medium', 'thomas-gue.github.io');
-    params.append('bring_campaign', 'webImportItemExtended');
-    params.append('is_retargeting', 'false');
-    params.append('utm_source', 'importWidget');
-    params.append('utm_medium', 'thomas-gue.github.io');
-    params.append('utm_campaign', 'webImportItemExtended');
-    params.append('pid', 'importWidget');
-    params.append('c', 'thomas-gue.github.io');
-    params.append('af_channel', 'webImportItemExtended');
-
-    const oneLinkUrl = 'https://enjoy.getbring.com/ZAzR?' + params.toString();
-
-    // 5. Modal schließen + zur Bring! App weiterleiten
     closeBringModal();
-    showToast(
-        'Weiterleitung zu Bring! 🛒',
-        `${items.length} Zutat${items.length !== 1 ? 'en' : ''} werden übertragen…`
-    );
+    showToast('Verbinde mit Bring!…', 'Zutaten werden übertragen…');
 
-    window.location.href = oneLinkUrl;
+    fetch(firebaseShareUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(recipeData)
+    })
+    .then(res => {
+        if (!res.ok) throw new Error(`Fehler ${res.status}`);
+
+        // 4. Base64 URL-safe Encoding (exakt wie Bring!'s Widget)
+        function btoaUrlSave(str) {
+            return window.btoa(str).replace(/\+/g, '-').replace(/\//g, '_');
+        }
+
+        // 5. Deep Link: type=RECIPE mit direkter Firebase-URL als src
+        //    Die App ruft diese URL ab und findet das Schema.org JSON-LD
+        const srcEncoded = btoaUrlSave(firebaseShareUrl);
+        const deepLink = 'https://deeplink.getbring.com/import?type=RECIPE&src=' + srcEncoded;
+
+        // 6. OneLink (bewiesenermaßen öffnet die App im Rezept-Import-Bereich)
+        const params = new URLSearchParams();
+        params.append('deep_link_value', deepLink);
+        params.append('af_web_dp', deepLink);
+        params.append('bring_source', 'importWidget');
+        params.append('bring_medium', 'thomas-gue.github.io');
+        params.append('bring_campaign', 'importRecipe');
+        params.append('is_retargeting', 'false');
+        params.append('utm_source', 'importWidget');
+        params.append('utm_medium', 'thomas-gue.github.io');
+        params.append('utm_campaign', 'importRecipe');
+        params.append('pid', 'importWidget');
+        params.append('c', 'thomas-gue.github.io');
+        params.append('af_channel', 'importRecipe');
+
+        const oneLinkUrl = 'https://enjoy.getbring.com/ZAzR?' + params.toString();
+        window.location.href = oneLinkUrl;
+
+        // 7. Firebase-Eintrag nach 5 Min aufräumen
+        setTimeout(() => {
+            fetch(firebaseShareUrl, { method: 'DELETE' }).catch(() => {});
+        }, 5 * 60 * 1000);
+    })
+    .catch(err => {
+        console.error('Bring! Export Fehler:', err);
+        showToast('Export fehlgeschlagen', 'Prüfe deine Internetverbindung.', true);
+    });
 }
 
 
