@@ -2307,13 +2307,12 @@ function setBringAllChecked(checked) {
 }
 
 /**
- * Exportiert Zutaten zu Bring! – alles in einer Funktion, kein externer Server.
+ * Exportiert Zutaten direkt zu Bring! – ohne Parser, ohne Server.
  * 
- * Baut den exakt gleichen OneLink wie Bring!'s offizielles Widget (import.js)
- * für Nicht-Partner-Seiten. Der Deep-Link-Pfad ist /import?type=RECIPE&src=...
+ * Die Zutaten werden als JSON im Deep Link kodiert (items/purchase/details).
+ * Der OneLink-Wrapper (enjoy.getbring.com) sorgt dafür, dass die App sich öffnet.
  * 
- * Zusätzlich wird Schema.org JSON-LD in die aktuelle Seite injiziert, damit
- * Bring!'s Parser die Zutaten findet wenn er unsere GitHub Pages URL abruft.
+ * Encoding: btoaUTF8 aus Bring!'s eigenem Widget-Source (import.js).
  */
 function sendToBring() {
     const checkedItems = [...document.querySelectorAll('#bring-ingredient-list .bring-item.is-checked')];
@@ -2323,56 +2322,63 @@ function sendToBring() {
         return;
     }
 
-    // 1. Zutaten als Strings aufbauen
-    const recipeIngredients = checkedItems.map(item => {
+    // 1. Items im Bring!-Format aufbauen (itemId = Produktname, spec = Menge+Einheit)
+    const items = checkedItems.map(item => {
         const menge = item.dataset.menge || '';
         const einheit = item.dataset.einheit || '';
         const name = item.dataset.name || '';
-        return [menge, einheit, name].filter(p => p.trim() !== '').join(' ');
+        const spec = [menge, einheit].filter(p => p.trim() !== '').join(' ');
+        const obj = { itemId: name };
+        if (spec) obj.spec = spec;
+        return obj;
     });
 
-    // 2. Schema.org JSON-LD in die aktuelle Seite injizieren
-    //    Bring!'s Parser ruft unsere GitHub-Pages-URL ab und sucht nach diesem Tag
-    let jsonLdEl = document.getElementById('bring-json-ld');
-    if (!jsonLdEl) {
-        jsonLdEl = document.createElement('script');
-        jsonLdEl.id = 'bring-json-ld';
-        jsonLdEl.type = 'application/ld+json';
-        document.head.appendChild(jsonLdEl);
+    // 2. btoaUTF8 – exakt wie in Bring!'s import.js (für Umlaute: ä, ö, ü, ß)
+    function btoaUTF8(str) {
+        return btoa(str.replace(
+            /[\x80-\uD7FF\uDC00-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]?/g,
+            function(c) {
+                const code = c.charCodeAt(0);
+                if (code >= 0xD800 && code <= 0xDBFF) {
+                    const next = c.charCodeAt(1);
+                    if (next >= 0xDC00 && next <= 0xDFFF) {
+                        const cp = 1024 * (code - 0xD800) + next - 0xDC00 + 0x10000;
+                        return String.fromCharCode(
+                            0xF0 | (cp >>> 18), 0x80 | ((cp >>> 12) & 0x3F),
+                            0x80 | ((cp >>> 6) & 0x3F), 0x80 | (cp & 0x3F)
+                        );
+                    }
+                    return '\uFFFD';
+                }
+                if (code <= 0x7F) return c;
+                if (code <= 0x7FF) return String.fromCharCode(0xC0 | (code >>> 6), 0x80 | (code & 0x3F));
+                return String.fromCharCode(
+                    0xE0 | (code >>> 12), 0x80 | ((code >>> 6) & 0x3F), 0x80 | (code & 0x3F)
+                );
+            }
+        ));
     }
-    jsonLdEl.textContent = JSON.stringify({
-        "@context": "https://schema.org",
-        "@type": "Recipe",
-        "name": currentRecipe?.titel || 'Rezept',
-        "recipeIngredient": recipeIngredients,
-        "recipeYield": String(currentPortion || 1)
-    });
 
-    // 3. Hilfsfunktion: Base64 URL-safe (exakt wie Bring!'s Widget)
-    function btoaUrlSave(str) {
-        return window.btoa(str).replace(/\+/g, '-').replace(/\//g, '_');
-    }
+    // 3. Deep Link bauen (wie createImportItemExtendedDeeplink im Widget)
+    const itemsJson = JSON.stringify(items);
+    const base64Data = btoaUTF8(itemsJson);
+    const deepLink = 'https://deeplink.getbring.com/items/purchase/details?data=' + base64Data;
 
-    // 4. OneLink bauen (exakt wie import.js → createImportRecipeFirebaseDynamicLink)
-    const pageUrl = 'https://thomas-gue.github.io/Rezepte-Hub/';
-    const parserUrl = 'https://api.getbring.com/rest/bringrecipes/parser?url=' + pageUrl;
-    const srcEncoded = btoaUrlSave(parserUrl);
-
-    const deepLinkValue = 'https://deeplink.getbring.com/import?type=RECIPE&src=' + srcEncoded;
-
+    // 4. OneLink bauen (wie createFirebaseDynamicLink im Widget)
+    //    Bewiesenermaßen öffnet die App – jetzt mit Items-Deep-Link statt Recipe-Deep-Link
     const params = new URLSearchParams();
-    params.append('deep_link_value', deepLinkValue);
-    params.append('af_web_dp', deepLinkValue);
+    params.append('deep_link_value', deepLink);
+    params.append('af_web_dp', deepLink);
     params.append('bring_source', 'importWidget');
     params.append('bring_medium', 'thomas-gue.github.io');
-    params.append('bring_campaign', 'importRecipe');
+    params.append('bring_campaign', 'webImportItemExtended');
     params.append('is_retargeting', 'false');
     params.append('utm_source', 'importWidget');
     params.append('utm_medium', 'thomas-gue.github.io');
-    params.append('utm_campaign', 'importRecipe');
+    params.append('utm_campaign', 'webImportItemExtended');
     params.append('pid', 'importWidget');
     params.append('c', 'thomas-gue.github.io');
-    params.append('af_channel', 'importRecipe');
+    params.append('af_channel', 'webImportItemExtended');
 
     const oneLinkUrl = 'https://enjoy.getbring.com/ZAzR?' + params.toString();
 
@@ -2380,7 +2386,7 @@ function sendToBring() {
     closeBringModal();
     showToast(
         'Weiterleitung zu Bring! 🛒',
-        `${recipeIngredients.length} Zutat${recipeIngredients.length !== 1 ? 'en' : ''} werden übertragen…`
+        `${items.length} Zutat${items.length !== 1 ? 'en' : ''} werden übertragen…`
     );
 
     window.location.href = oneLinkUrl;
