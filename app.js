@@ -2308,9 +2308,7 @@ function setBringAllChecked(checked) {
 
 /**
  * Baut die Bring!-URL aus den gewählten Zutaten und öffnet sie in einem neuen Tab.
- * Nutzt den offiziellen Bring! DeepLink-Mechanismus:
- * https://deeplink.getbring.com/import?type=RECIPE&src=<base64url>
- * mit einem vorgebauten "items"-String.
+ * Nutzt den offiziellen Bring! DeepLink-Mechanismus.
  */
 function sendToBring() {
     // 1. Gecheckte Items sammeln
@@ -2321,52 +2319,58 @@ function sendToBring() {
         return;
     }
 
-    // 2. Strings zusammensetzen: "Menge Einheit Name" (keine doppelten Leerzeichen)
-    const lines = checkedItems.map(item => {
+    // 3. Items-Array für Bring! API aufbauen
+    const itemsPayload = checkedItems.map(item => {
         const menge = item.dataset.menge || '';
         const einheit = item.dataset.einheit || '';
         const name = item.dataset.name || '';
-        return [menge, einheit, name].filter(p => p.trim() !== '').join(' ');
-    }).filter(line => line.trim() !== '');
+        const spec = [menge, einheit].filter(p => p.trim() !== '').join(' ');
+        return {
+            itemId: name,
+            spec: spec || undefined
+        };
+    }).map(item => {
+        if (!item.spec) delete item.spec;
+        return item;
+    });
 
-    // 3. Mit Zeilenumbruch verbinden
-    const ingredientsStr = lines.join('\n');
+    // 4. Bring! btoaUTF8 Encoding
+    function btoaUTF8(str) {
+        const utf8str = str.replace(/[\x80-\uD7FF\uDC00-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]?/g, function(c) {
+            const code = c.charCodeAt(0);
+            if (code >= 0xD800 && code <= 0xDBFF) {
+                const next = c.charCodeAt(1);
+                if (next >= 0xDC00 && next <= 0xDFFF) {
+                    const cp = 1024 * (code - 0xD800) + next - 0xDC00 + 0x10000;
+                    return String.fromCharCode(0xF0 | (cp >>> 18), 0x80 | ((cp >>> 12) & 0x3F), 0x80 | ((cp >>> 6) & 0x3F), 0x80 | (cp & 0x3F));
+                }
+                return '\uFFFD';
+            }
+            if (code <= 0x7F) return c;
+            if (code <= 0x7FF) return String.fromCharCode(0xC0 | (code >>> 6), 0x80 | (code & 0x3F));
+            return String.fromCharCode(0xE0 | (code >>> 12), 0x80 | ((code >>> 6) & 0x3F), 0x80 | (code & 0x3F));
+        });
+        return btoa(utf8str);
+    }
 
-    // 4. URL-konform encoden
-    const encodedIngredients = encodeURIComponent(ingredientsStr);
-    const rezeptTitel = encodeURIComponent(currentRecipe?.titel || 'Rezept');
+    function btoaUrlSafe(str) {
+        return btoaUTF8(str).replace(/\+/g, '-').replace(/\//g, '_');
+    }
 
-    // 5. Bring! Deep-Link aufbauen
-    // Die Bring! Import-Seite erwartet eine URL zu einer Rezeptseite mit JSON-LD.
-    // Wir nutzen den "items"-Parameter des Bring! importPageUrl Schemas:
-    // platform.getbring.com/widgets/import.html?src=<base64url(url)>
-    // Da wir keine externe URL haben, bauen wir einen Direct-Import-Link:
-    // https://api.getbring.com/rest/bringrecipes/deeplink?url=...&source=web
-    // 
-    // Der zuverlässigste Ansatz: Bring! Import-Seite mit einem
-    // data-URI als Rezeptseite ist nicht möglich.
-    // Stattdessen: Wir öffnen import.html mit einem vorbereiteten
-    // encodeURIComponent-Ingredients-String via dem "items"-Format.
-    //
-    // Offiziell unterstütztes Format (aus dem Widget-Source-Code):
-    // items/purchase/details?data=<btoaURLSafe(JSON.stringify(itemsArray))>
-    const itemsPayload = lines.map(line => ({
-        itemId: line,
-        spec: line
-    }));
-
-    // btoa URL-safe Encoding (wie in Bring!'s eigenem btoaUrlSave)
     const jsonStr = JSON.stringify(itemsPayload);
-    const base64Raw = btoa(unescape(encodeURIComponent(jsonStr)));
-    const base64UrlSafe = base64Raw.replace(/\+/g, '-').replace(/\//g, '_');
+    const base64Data = btoaUrlSafe(jsonStr);
 
-    // DeepLink aufbauen: https://deeplink.getbring.com/items/purchase/details?data=<base64>
-    const deeplink = `https://deeplink.getbring.com/items/purchase/details?data=${base64UrlSafe}`;
+    // 5. Bring! DeepLink aufbauen
+    const deeplink = `https://deeplink.getbring.com/items/purchase/details?data=${base64Data}`;
+    const encodedDeeplink = encodeURIComponent(deeplink);
 
-    // 6. Neuen Tab öffnen
-    window.open(deeplink, '_blank', 'noopener,noreferrer');
+    // 6. Firebase Dynamic Link
+    const firebaseUrl = `https://enjoy.getbring.com/ZAzR/?apn=ch.publisheria.bring&isi=580669177&ibi=ch.publisheria.bring&utm_source=rezeptHub&utm_medium=webImportItemExtended&utm_campaign=webImportItemExtended&link=${encodedDeeplink}&afl=${encodedDeeplink}&ifl=${encodedDeeplink}`;
 
-    // 7. Modal schließen + Toast
+    // 7. Neuen Tab öffnen
+    window.open(firebaseUrl, '_blank', 'noopener,noreferrer');
+
+    // 8. Modal schließen + Toast
     closeBringModal();
     showToast(
         'An Bring! gesendet 🛒',
