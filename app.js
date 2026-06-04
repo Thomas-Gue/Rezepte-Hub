@@ -2364,11 +2364,11 @@ function sendToBring() {
     const jsonStr = JSON.stringify(items);
     const base64Data = btoaUTF8(jsonStr);
 
-    // 5. Bring! Web-App direkt öffnen mit den Daten im URL
-    // Pfad "items/purchase/details?data=..." ist Bring!'s interner Deeplink-Pfad
-    // den die Web-App (SPA) als Route verarbeitet
-    const bringUrl = `https://web.getbring.com/app/items/purchase/details?data=${base64Data}`;
-    window.open(bringUrl, '_blank', 'noopener,noreferrer');
+    // 5. Bring! App direkt öffnen via Deep Link
+    // deeplink.getbring.com ist als Universal Link (iOS) / App Link (Android) registriert
+    // → das mobile OS fängt die URL ab und öffnet die installierte Bring! App
+    const bringUrl = `https://deeplink.getbring.com/items/purchase/details?data=${base64Data}`;
+    window.open(bringUrl, '_blank');
 
     // 6. Modal schließen + Toast
     closeBringModal();
