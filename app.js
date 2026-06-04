@@ -2308,7 +2308,8 @@ function setBringAllChecked(checked) {
 
 /**
  * Baut die Bring!-URL aus den gewählten Zutaten und öffnet sie in einem neuen Tab.
- * Nutzt den offiziellen Bring! DeepLink-Mechanismus.
+ * Kein Server/Firebase nötig – die Daten werden direkt im URL kodiert.
+ * Encoding: btoaUTF8 aus Bring!'s eigenem Widget-Source (import.js).
  */
 function sendToBring() {
     // 1. Gecheckte Items sammeln
@@ -2319,64 +2320,64 @@ function sendToBring() {
         return;
     }
 
-    // 3. Items-Array für Bring! API aufbauen
-    const itemsPayload = checkedItems.map(item => {
+    // 2. Items im Bring!-Format aufbauen
+    // itemId = Produktname (Bring! sucht diesen in seiner DB)
+    // spec   = Menge + Einheit
+    const items = checkedItems.map(item => {
         const menge = item.dataset.menge || '';
         const einheit = item.dataset.einheit || '';
         const name = item.dataset.name || '';
         const spec = [menge, einheit].filter(p => p.trim() !== '').join(' ');
-        return {
-            itemId: name,
-            spec: spec || undefined
-        };
-    }).map(item => {
-        if (!item.spec) delete item.spec;
-        return item;
+        const obj = { itemId: name };
+        if (spec) obj.spec = spec;
+        return obj;
     });
 
-    // 4. Bring! btoaUTF8 Encoding
+    // 3. btoaUTF8 – exakt wie in Bring!'s import.js Widget
+    // Konvertiert UTF-8 Zeichen (ä, ö, ü) korrekt zu Base64
     function btoaUTF8(str) {
-        const utf8str = str.replace(/[\x80-\uD7FF\uDC00-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]?/g, function(c) {
-            const code = c.charCodeAt(0);
-            if (code >= 0xD800 && code <= 0xDBFF) {
-                const next = c.charCodeAt(1);
-                if (next >= 0xDC00 && next <= 0xDFFF) {
-                    const cp = 1024 * (code - 0xD800) + next - 0xDC00 + 0x10000;
-                    return String.fromCharCode(0xF0 | (cp >>> 18), 0x80 | ((cp >>> 12) & 0x3F), 0x80 | ((cp >>> 6) & 0x3F), 0x80 | (cp & 0x3F));
+        return btoa(str.replace(
+            /[\x80-\uD7FF\uDC00-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]?/g,
+            function(c) {
+                const code = c.charCodeAt(0);
+                if (code >= 0xD800 && code <= 0xDBFF) {
+                    const next = c.charCodeAt(1);
+                    if (next >= 0xDC00 && next <= 0xDFFF) {
+                        const cp = 1024 * (code - 0xD800) + next - 0xDC00 + 0x10000;
+                        return String.fromCharCode(
+                            0xF0 | (cp >>> 18), 0x80 | ((cp >>> 12) & 0x3F),
+                            0x80 | ((cp >>> 6) & 0x3F), 0x80 | (cp & 0x3F)
+                        );
+                    }
+                    return '\uFFFD';
                 }
-                return '\uFFFD';
+                if (code <= 0x7F) return c;
+                if (code <= 0x7FF) return String.fromCharCode(0xC0 | (code >>> 6), 0x80 | (code & 0x3F));
+                return String.fromCharCode(
+                    0xE0 | (code >>> 12), 0x80 | ((code >>> 6) & 0x3F), 0x80 | (code & 0x3F)
+                );
             }
-            if (code <= 0x7F) return c;
-            if (code <= 0x7FF) return String.fromCharCode(0xC0 | (code >>> 6), 0x80 | (code & 0x3F));
-            return String.fromCharCode(0xE0 | (code >>> 12), 0x80 | ((code >>> 6) & 0x3F), 0x80 | (code & 0x3F));
-        });
-        return btoa(utf8str);
+        ));
     }
 
-    function btoaUrlSafe(str) {
-        return btoaUTF8(str).replace(/\+/g, '-').replace(/\//g, '_');
-    }
+    // 4. JSON kodieren
+    const jsonStr = JSON.stringify(items);
+    const base64Data = btoaUTF8(jsonStr);
 
-    const jsonStr = JSON.stringify(itemsPayload);
-    const base64Data = btoaUrlSafe(jsonStr);
+    // 5. Bring! Web-App direkt öffnen mit den Daten im URL
+    // Pfad "items/purchase/details?data=..." ist Bring!'s interner Deeplink-Pfad
+    // den die Web-App (SPA) als Route verarbeitet
+    const bringUrl = `https://web.getbring.com/app/items/purchase/details?data=${base64Data}`;
+    window.open(bringUrl, '_blank', 'noopener,noreferrer');
 
-    // 5. Bring! DeepLink aufbauen
-    const deeplink = `https://deeplink.getbring.com/items/purchase/details?data=${base64Data}`;
-    const encodedDeeplink = encodeURIComponent(deeplink);
-
-    // 6. Firebase Dynamic Link
-    const firebaseUrl = `https://enjoy.getbring.com/ZAzR/?apn=ch.publisheria.bring&isi=580669177&ibi=ch.publisheria.bring&utm_source=rezeptHub&utm_medium=webImportItemExtended&utm_campaign=webImportItemExtended&link=${encodedDeeplink}&afl=${encodedDeeplink}&ifl=${encodedDeeplink}`;
-
-    // 7. Neuen Tab öffnen
-    window.open(firebaseUrl, '_blank', 'noopener,noreferrer');
-
-    // 8. Modal schließen + Toast
+    // 6. Modal schließen + Toast
     closeBringModal();
     showToast(
         'An Bring! gesendet 🛒',
-        `${checkedItems.length} Zutat${checkedItems.length !== 1 ? 'en' : ''} wurden an deine Einkaufsliste weitergeleitet.`
+        `${items.length} Zutat${items.length !== 1 ? 'en' : ''} wurden an Bring! weitergeleitet.`
     );
 }
+
 
 function createNewRecipe() {
     const newRecipe = {
