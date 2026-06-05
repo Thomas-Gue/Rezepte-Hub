@@ -148,26 +148,38 @@ async function loadRecipesFromFirebase() {
 
     // 2. Aktualisiere im Hintergrund von Firebase
     try {
-        const response = await fetch(`${FIREBASE_URL}/recipes.json`);
-        if (!response.ok) throw new Error("Netzwerkfehler");
+        const [recipesRes, deletedRes] = await Promise.all([
+            fetch(`${FIREBASE_URL}/recipes.json`),
+            fetch(`${FIREBASE_URL}/deleted_recipes.json`)
+        ]);
+        if (!recipesRes.ok) throw new Error("Netzwerkfehler beim Laden der Rezepte");
 
-        let data = await response.json();
+        let data = await recipesRes.json();
+        let deletedData = {};
+        try {
+            if (deletedRes.ok) {
+                deletedData = await deletedRes.json() || {};
+            }
+        } catch (e) { console.warn("Konnte gelöschte Rezepte nicht parsen", e); }
 
-        // Seeding falls Firebase komplett leer ist
-        if (!data) {
+        // Seeding falls Firebase komplett leer ist und keine gelöschten Rezepte da sind
+        if (!data && Object.keys(deletedData).length === 0) {
             console.log("Firebase ist leer. Initialisiere Standardrezepte (Seeding)...");
             await seedDefaultRecipes();
             return;
         }
 
-        // Bereinige Standardrezepte aus Firebase-Antwort
-        defaultIds.forEach(id => {
-            if (data[id]) {
-                delete data[id];
-                // Synchron aus Firebase entfernen
-                fetch(`${FIREBASE_URL}/recipes/${id}.json`, { method: 'DELETE' }).catch(e => {});
-            }
-        });
+        // Bereinige Standardrezepte aus Firebase-Antwort (falls noch vorhanden)
+        if (data) {
+            defaultIds.forEach(id => {
+                if (data[id]) {
+                    delete data[id];
+                    fetch(`${FIREBASE_URL}/recipes/${id}.json`, { method: 'DELETE' }).catch(e => {});
+                }
+            });
+        } else {
+            data = {};
+        }
 
         // RECONCILIATION: Wenn der lokale Cache Änderungen hat, die nicht auf Firebase sind,
         // behalten wir die lokale Version und synchronisieren sie zurück zu Firebase.
@@ -179,30 +191,55 @@ async function loadRecipesFromFirebase() {
                 const localRec = recipes[id];
                 const fbRec = data[id];
 
+                // Falls das Rezept auf einem anderen Gerät gelöscht wurde
+                if (deletedData[id]) {
+                    return; // Überspringen und nicht mergen (wird somit gelöscht)
+                }
+
                 if (!fbRec) {
-                    // Rezept existiert lokal, aber nicht auf Firebase (z.B. neu erstellt während offline)
+                    // Rezept existiert lokal, aber nicht auf Firebase.
+                    // Wenn es nicht in deletedData steht, wurde es neu offline erstellt.
                     mergedRecipes[id] = localRec;
                     hasLocalEditsToSync = true;
-                    saveRecipeToFirebase(localRec);
+                    saveRecipeToFirebase(localRec, false); // Timestamp erhalten
                 } else {
-                    // Rezept existiert an beiden Stellen. Vergleiche den Inhalt.
-                    const localStr = JSON.stringify(localRec);
-                    const fbStr = JSON.stringify(fbRec);
-                    if (localStr !== fbStr) {
-                        // Wenn der Benutzer das Rezept gerade aktiv bearbeitet, behalten wir es bei
-                        if (currentRecipe && currentRecipe.id === id) {
-                            localRec.beschreibung = currentRecipe.beschreibung || localRec.beschreibung;
-                            localRec.titel = currentRecipe.titel || localRec.titel;
-                        }
-                        
-                        console.log(`Lokale Änderung für Rezept ${id} erkannt. Synchronisiere zu Firebase...`);
+                    // Rezept existiert an beiden Stellen. Vergleiche Zeitstempel.
+                    const localTime = localRec.lastUpdated || 0;
+                    const fbTime = fbRec.lastUpdated || 0;
+
+                    if (fbTime > localTime) {
+                        // Firebase hat eine neuere Änderung (von anderem Gerät)
+                        mergedRecipes[id] = fbRec;
+                    } else if (localTime > fbTime) {
+                        // Lokaler Cache hat eine neuere Änderung (wurde offline bearbeitet)
                         mergedRecipes[id] = localRec;
                         hasLocalEditsToSync = true;
-                        saveRecipeToFirebase(localRec);
+                        saveRecipeToFirebase(localRec, false); // Timestamp erhalten
+                    } else {
+                        // Zeitstempel sind identisch. Falls der Inhalt abweicht, weichen wir auf Firebase aus,
+                        // außer das Rezept wird gerade aktiv im UI editiert.
+                        const localStr = JSON.stringify(localRec);
+                        const fbStr = JSON.stringify(fbRec);
+                        if (localStr !== fbStr) {
+                            if (currentRecipe && currentRecipe.id === id) {
+                                mergedRecipes[id] = localRec;
+                                hasLocalEditsToSync = true;
+                                saveRecipeToFirebase(localRec, false);
+                            } else {
+                                mergedRecipes[id] = fbRec;
+                            }
+                        }
                     }
                 }
             });
         }
+
+        // Sicherstellen, dass auch bereits gelöschte Rezepte aus dem Merge gelöscht werden
+        Object.keys(deletedData).forEach(id => {
+            if (mergedRecipes[id]) {
+                delete mergedRecipes[id];
+            }
+        });
 
         // Vergleiche eingehende Daten mit dem Cache, um Flackern zu verhindern
         const cachedStr = localStorage.getItem('recipes_cache');
@@ -259,8 +296,11 @@ async function seedDefaultRecipes() {
     }
 }
 
-async function saveRecipeToFirebase(recipe) {
+async function saveRecipeToFirebase(recipe, updateTimestamp = true) {
     try {
+        if (updateTimestamp) {
+            recipe.lastUpdated = Date.now();
+        }
         // Aktualisiere lokalen Arbeitsspeicher
         recipes[recipe.id] = recipe;
         localStorage.setItem('recipes_cache', JSON.stringify(recipes));
@@ -993,6 +1033,8 @@ function saveCurrentRecipeImmediately() {
 
 function syncAllToState() {
     if (!currentRecipe) return;
+    
+    currentRecipe.lastUpdated = Date.now();
     
     const titelEl = document.getElementById('rv-titel');
     const descEl = document.getElementById('rv-kurzbeschreibung');
@@ -2264,6 +2306,21 @@ document.addEventListener('DOMContentLoaded', () => {
     loadRecipesFromFirebase();
     prewarmFirebaseSearchIndex();
 
+    // Automatischer Hintergrund-Sync bei Tab-Fokus und periodisch alle 60 Sekunden
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            console.log("App wieder im Vordergrund. Synchronisiere Rezepte...");
+            loadRecipesFromFirebase();
+        }
+    });
+
+    setInterval(() => {
+        if (document.visibilityState === 'visible') {
+            console.log("Periodischer Hintergrund-Sync...");
+            loadRecipesFromFirebase();
+        }
+    }, 60000);
+
     // Hub-Navigation
     document.getElementById('btn-scan')?.addEventListener('click', () => alert('Kassenzettel scannen steht erst in der Pro-Version zur Verfügung.'));
     document.getElementById('btn-new-recipe')?.addEventListener('click', createNewRecipe);
@@ -2927,6 +2984,13 @@ async function deleteRecipe(recipeId) {
         const response = await fetch(`${FIREBASE_URL}/recipes/${recipeId}.json`, {
             method: 'DELETE'
         });
+
+        // In Firebase unter gelöschten Rezepten registrieren (für Multi-Device Sync)
+        fetch(`${FIREBASE_URL}/deleted_recipes/${recipeId}.json`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(Date.now())
+        }).catch(err => console.warn("Fehler beim Sichern in deleted_recipes:", err));
 
         if (!response.ok) throw new Error("Fehler beim Löschen");
 
