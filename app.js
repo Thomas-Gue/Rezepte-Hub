@@ -1303,25 +1303,55 @@ async function startCameraScanner() {
     }
 
     try {
-        // Liste alle Video-Eingabegeräte auf, falls wir das noch nicht getan haben
-        if (videoDevices.length === 0) {
-            const allDevices = await navigator.mediaDevices.enumerateDevices();
-            // Alle Kameras ohne Ausschluss übernehmen
-            videoDevices = allDevices.filter(device => device.kind === 'videoinput');
-            currentDeviceIndex = 0; // Standardmäßig Kamera 0 nutzen
-        }
-
-        let constraints = { video: { facingMode: 'environment', advanced: [{ focusMode: 'continuous' }, { zoom: 2.0 }] } };
-
+        let constraints;
         if (videoDevices.length > 0) {
-            constraints.video = {
-                deviceId: { exact: videoDevices[currentDeviceIndex].deviceId },
-                advanced: [{ focusMode: 'continuous' }, { zoom: 2.0 }]
+            constraints = {
+                video: {
+                    deviceId: { exact: videoDevices[currentDeviceIndex].deviceId },
+                    advanced: [{ focusMode: 'continuous' }, { zoom: 2.0 }]
+                }
+            };
+        } else {
+            // Erster Start: Rückseitenkamera (Hauptkamera) bevorzugen
+            constraints = {
+                video: {
+                    facingMode: 'environment',
+                    advanced: [{ focusMode: 'continuous' }, { zoom: 2.0 }]
+                }
             };
         }
 
         cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
         video.srcObject = cameraStream;
+
+        // Wenn videoDevices noch leer ist, rufen wir erst JETZT (mit erteilter Berechtigung) enumerateDevices auf.
+        // Das garantiert vollständige Labels und korrekte, stabile Device-IDs ohne Platzhalter.
+        if (videoDevices.length === 0) {
+            const allDevices = await navigator.mediaDevices.enumerateDevices();
+            const rawDevices = allDevices.filter(device => device.kind === 'videoinput');
+            
+            // Duplikate über die deviceId herausfiltern
+            const seen = new Set();
+            videoDevices = rawDevices.filter(d => {
+                if (!d.deviceId) return false;
+                if (seen.has(d.deviceId)) return false;
+                seen.add(d.deviceId);
+                return true;
+            });
+
+            // Finde heraus, welche Kamera der Browser gestartet hat, und passe currentDeviceIndex an
+            const activeTrack = cameraStream.getVideoTracks()[0];
+            if (activeTrack) {
+                const settings = activeTrack.getSettings();
+                const activeDeviceId = settings.deviceId;
+                if (activeDeviceId) {
+                    const idx = videoDevices.findIndex(d => d.deviceId === activeDeviceId);
+                    if (idx !== -1) {
+                        currentDeviceIndex = idx;
+                    }
+                }
+            }
+        }
 
         // Warten bis Metadaten geladen sind um das Video abzuspielen
         await new Promise(resolve => {
