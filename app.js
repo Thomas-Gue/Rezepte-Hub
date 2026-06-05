@@ -1364,6 +1364,13 @@ async function startCameraScanner() {
 
         if (scannerLine) scannerLine.style.display = 'block';
 
+        if (videoDevices.length > 0) {
+            const currentCam = videoDevices[currentDeviceIndex];
+            const name = currentCam.label || `Kamera ${currentDeviceIndex + 1}`;
+            const shortId = currentCam.deviceId ? currentCam.deviceId.substring(0, 8) + '...' : 'unbekannt';
+            showToast('Kamera aktiv', `${name} (ID: ${shortId})`, false);
+        }
+
         scanLoop();
     } catch (err) {
         console.error('Kamera-Zugriffsfehler:', err);
