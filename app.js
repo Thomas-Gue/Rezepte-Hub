@@ -796,6 +796,9 @@ function renderIngredients(zutaten, curPort, basePort) {
         if (z.preisProKg) li.dataset.preisProKg = z.preisProKg;
         if (z.product_quantity) li.dataset.productQuantity = z.product_quantity;
         if (z.brands) li.dataset.brands = z.brands;
+        if (z.nutriscore_score !== undefined && z.nutriscore_score !== null) {
+            li.dataset.nutriscoreScore = z.nutriscore_score;
+        }
 
         // Dynamischer Dropdown-Generator für Einheiten (streng ohne Fallback)
         const fixedUnits = ["g", "ml", "cl", "Stk.", "TL", "EL"];
@@ -894,26 +897,15 @@ function syncIngredientsFromDOM() {
         const selectEl = li.querySelector('.zutat-einheit-select');
         const unit = selectEl ? selectEl.value : 'g';
 
-        // Erhalte das bestehende stkInGrams, preisProKg, product_quantity und brands falls vorhanden
-        const indexStr = li.dataset.index || '';
-        const idx = parseInt(indexStr);
-        let existingStkGrams = null;
-        let existingPreisProKg = null;
-        let existingProductQuantity = null;
-        let existingBrands = null;
-        let existingNutriscoreScore = null;
-        if (!isNaN(idx) && currentRecipe.zutaten[idx]) {
-            existingStkGrams = currentRecipe.zutaten[idx].stkInGrams;
-            existingPreisProKg = currentRecipe.zutaten[idx].preisProKg;
-            existingProductQuantity = currentRecipe.zutaten[idx].product_quantity;
-            existingBrands = currentRecipe.zutaten[idx].brands;
-            existingNutriscoreScore = currentRecipe.zutaten[idx].nutriscore_score;
-        }
-
         const domMenge = parseFloat(li.querySelector('.zutat-menge').textContent) || 0;
         const baseMenge = (currentPortion > 0 && basePortion > 0)
             ? (domMenge * basePortion / currentPortion)
             : domMenge;
+
+        const nutriscoreVal = li.dataset.nutriscoreScore;
+        const nutriscoreScore = (nutriscoreVal !== undefined && nutriscoreVal !== null && nutriscoreVal !== 'null' && nutriscoreVal !== '')
+            ? parseFloat(nutriscoreVal)
+            : null;
 
         return {
             menge: Math.round(baseMenge * 100) / 100,
@@ -921,11 +913,11 @@ function syncIngredientsFromDOM() {
             name: li.querySelector('.zutat-name').textContent.trim(),
             barcode: li.dataset.barcode || null,
             naehrwerte: li.dataset.naehrwerte ? JSON.parse(li.dataset.naehrwerte) : null,
-            stkInGrams: existingStkGrams || parseFloat(li.dataset.stkInGrams) || null,
-            preisProKg: existingPreisProKg || parseFloat(li.dataset.preisProKg) || null,
-            product_quantity: existingProductQuantity || parseFloat(li.dataset.productQuantity) || null,
-            brands: existingBrands || li.dataset.brands || null,
-            nutriscore_score: existingNutriscoreScore !== undefined && existingNutriscoreScore !== null ? existingNutriscoreScore : null
+            stkInGrams: li.dataset.stkInGrams ? parseFloat(li.dataset.stkInGrams) : null,
+            preisProKg: li.dataset.preisProKg ? parseFloat(li.dataset.preisProKg) : null,
+            product_quantity: li.dataset.productQuantity ? parseFloat(li.dataset.productQuantity) : null,
+            brands: li.dataset.brands || null,
+            nutriscore_score: nutriscoreScore
         };
     });
 }
