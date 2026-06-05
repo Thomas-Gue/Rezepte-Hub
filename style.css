@@ -1124,7 +1124,8 @@ body {
     border-radius: 10px;
     padding: 4px 6px;
     margin-left: auto;
-    margin-right: 28px; /* Shifted further to the left to prevent overlap with the gear */
+    margin-right: 28px;
+    /* Shifted further to the left to prevent overlap with the gear */
 }
 
 .stepper-btn {
@@ -1155,7 +1156,8 @@ body {
     font-weight: 600;
     color: var(--text-main);
     padding: 0 4px;
-    min-width: 32px; /* Reduced from 54px to be less wide */
+    min-width: 32px;
+    /* Reduced from 54px to be less wide */
     text-align: center;
 }
 
@@ -1170,14 +1172,15 @@ body {
 }
 
 .zutat-item {
-    display: flex;
+    display: grid;
+    grid-template-columns: 44px 30px 1fr;
     align-items: center;
-    gap: 4px; /* Reduced from 6px */
-    padding: 4px 0px 4px 4px; /* Reduced padding to shift content to the left */
+    column-gap: 3px;
+    padding: 4px 8px;
     border-radius: 10px;
     font-size: 0.875rem;
     transition: background 0.15s;
-    cursor: default; /* Changed from grab to default */
+    cursor: default;
     position: relative;
 }
 
@@ -1199,7 +1202,8 @@ body {
 .zutat-drag-handle {
     color: #cbd5e1;
     cursor: grab;
-    display: none; /* Changed from flex to none by default */
+    display: none;
+    /* none by default, shown in edit mode */
     align-items: center;
 }
 
@@ -1209,17 +1213,21 @@ body {
 }
 
 .zutat-menge {
+    grid-column: 1;
     font-weight: 700;
     color: var(--accent-dark);
-    min-width: 28px; /* Reduced from 36px */
     text-align: right;
+    display: block;
+    width: 100%;
     outline: none;
     border-radius: 4px;
-    padding: 1px 2px; /* Reduced from 4px */
+    padding: 1px 2px;
+    white-space: nowrap;
     transition: background 0.2s;
 }
 
 .zutat-einheit-select {
+    grid-column: 2;
     color: var(--text-muted);
     font-size: 0.8rem;
     font-weight: 500;
@@ -1227,18 +1235,19 @@ body {
     background: transparent;
     border: 1px solid transparent;
     border-radius: 8px;
-    padding: 1px 4px; /* Reduced from 6px */
+    padding: 1px 4px;
     outline: none;
     cursor: pointer;
     transition: all 0.15s ease;
     appearance: none;
     -webkit-appearance: none;
     -moz-appearance: none;
-    text-align: center;
+    text-align: left;
+    text-align-last: left;
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    min-width: 26px; /* Reduced from 32px */
+    justify-content: flex-start;
+    width: 100%;
 }
 
 .zutat-einheit-select:hover {
@@ -1252,8 +1261,17 @@ body {
     box-shadow: 0 0 0 2px rgba(29, 161, 242, 0.08);
 }
 
+.zutat-name-wrapper {
+    grid-column: 3;
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-width: 0;
+}
+
 .zutat-name {
     flex: 1;
+    min-width: 0;
     outline: none;
     border-radius: 4px;
     padding: 1px 4px;
@@ -1265,7 +1283,8 @@ body {
     border: none;
     color: #cbd5e1;
     cursor: pointer;
-    display: none; /* Changed from flex to none by default */
+    display: none;
+    /* none by default, shown in edit mode */
     align-items: center;
     padding: 2px;
     border-radius: 4px;
@@ -1284,10 +1303,30 @@ body {
 /* Edit Mode Active for Zutaten */
 .zutaten-box.is-editing .zutat-item {
     cursor: grab;
+    grid-template-columns: 24px 44px 30px 1fr 24px;
+    column-gap: 5px;
 }
 
-.zutaten-box.is-editing .zutat-drag-handle,
+.zutaten-box.is-editing .zutat-drag-handle {
+    grid-column: 1;
+    display: flex;
+    opacity: 1;
+}
+
+.zutaten-box.is-editing .zutat-menge {
+    grid-column: 2;
+}
+
+.zutaten-box.is-editing .zutat-einheit-select {
+    grid-column: 3;
+}
+
+.zutaten-box.is-editing .zutat-name-wrapper {
+    grid-column: 4;
+}
+
 .zutaten-box.is-editing .zutat-delete-btn {
+    grid-column: 5;
     display: flex;
     opacity: 1;
 }
@@ -2303,9 +2342,10 @@ body {
         size: A4 landscape;
         margin: 8mm;
     }
-    
+
     /* Reset elements for clean page rendering */
-    html, body {
+    html,
+    body {
         background: #fff !important;
         color: #0f172a !important;
         font-size: 10pt !important;
@@ -2317,19 +2357,19 @@ body {
     }
 
     /* Hide all unrelated UI elements completely */
-    #main-view, 
-    #recipes-view, 
-    .header, 
-    .back-btn, 
-    .recipe-view-header, 
-    .box-settings-gear, 
-    .ingredient-controls, 
-    .prep-actions, 
-    .zutaten-footer-btns, 
-    .modal-backdrop, 
-    .modal-content, 
-    .modal-close-btn, 
-    #toast-container, 
+    #main-view,
+    #recipes-view,
+    .header,
+    .back-btn,
+    .recipe-view-header,
+    .box-settings-gear,
+    .ingredient-controls,
+    .prep-actions,
+    .zutaten-footer-btns,
+    .modal-backdrop,
+    .modal-content,
+    .modal-close-btn,
+    #toast-container,
     #btn-pdf-download,
     #btn-delete-recipe,
     .remove-label,
@@ -2387,12 +2427,14 @@ body {
     .recipe-info-box {
         padding: 10px !important;
     }
+
     .recipe-title {
         font-size: 1.35rem !important;
         margin-top: 0 !important;
         margin-bottom: 4px !important;
         color: #0f172a !important;
     }
+
     .recipe-short-desc {
         font-size: 0.8rem !important;
         margin: 0 !important;
@@ -2406,6 +2448,7 @@ body {
         grid-template-columns: repeat(4, 1fr) !important;
         gap: 6px !important;
     }
+
     .key-prop-badge {
         padding: 6px !important;
         display: flex !important;
@@ -2413,27 +2456,32 @@ body {
         align-items: center !important;
         text-align: center !important;
     }
+
     .key-prop-badge .badge-icon {
         font-size: 1rem !important;
         margin-bottom: 2px !important;
     }
+
     .key-prop-badge .badge-label {
         font-size: 0.6rem !important;
         margin-bottom: 1px !important;
     }
+
     .key-prop-badge .badge-value {
         font-size: 0.85rem !important;
         font-weight: 700 !important;
     }
-    
+
     /* Nutri-score print adjustments */
     .nutri-badge {
         padding: 4px !important;
     }
+
     .nutri-scale {
         gap: 2px !important;
         height: 16px !important;
     }
+
     .nutri-seg {
         font-size: 0.6rem !important;
         width: 14px !important;
@@ -2468,9 +2516,11 @@ body {
         padding: 3px 0 !important;
         font-size: 0.75rem !important;
     }
+
     .naehrwert-label {
         font-size: 0.75rem !important;
     }
+
     .naehrwert-value {
         font-size: 0.75rem !important;
     }
@@ -2479,20 +2529,44 @@ body {
         gap: 2px !important;
         overflow: hidden !important;
     }
+
     .zutat-item {
+        display: grid !important;
+        grid-template-columns: 34px 24px 1fr !important;
+        align-items: center !important;
+        column-gap: 4px !important;
         padding: 3px 0 !important;
         font-size: 0.75rem !important;
     }
+
     .zutat-menge {
-        min-width: 20px !important;
+        grid-column: 1 !important;
+        min-width: unset !important;
         font-size: 0.75rem !important;
+        text-align: right !important;
+        width: 100% !important;
     }
+
     .zutat-einheit-select {
-        min-width: 20px !important;
+        grid-column: 2 !important;
+        min-width: unset !important;
         font-size: 0.75rem !important;
         border: none !important;
         background: transparent !important;
+        text-align: left !important;
+        text-align-last: left !important;
+        justify-content: flex-start !important;
+        width: 100% !important;
     }
+
+    .zutat-name-wrapper {
+        grid-column: 3 !important;
+        display: flex !important;
+        align-items: center !important;
+        width: 100% !important;
+        min-width: 0 !important;
+    }
+
     .zutat-name {
         font-size: 0.75rem !important;
     }
@@ -2505,34 +2579,41 @@ body {
         height: 100% !important;
         overflow: hidden !important;
     }
+
     .preparation-editor-container {
         flex: 1 !important;
         overflow: hidden !important;
         display: flex !important;
         flex-direction: column !important;
     }
+
     .prep-steps-list {
         gap: 6px !important;
         overflow: hidden !important;
     }
+
     .prep-step-item {
         padding: 6px 10px !important;
         background: #f8fafc !important;
         border-radius: 10px !important;
         font-size: 0.8rem !important;
     }
+
     .prep-section-item {
         margin-top: 6px !important;
         padding: 2px 0 !important;
     }
+
     .section-title {
         font-size: 0.85rem !important;
     }
+
     .step-number {
         width: 18px !important;
         height: 18px !important;
         font-size: 0.65rem !important;
     }
+
     .step-content {
         font-size: 0.8rem !important;
         line-height: 1.3 !important;
@@ -2553,7 +2634,8 @@ body {
 
 /* Bag body */
 .bring-svg-bag {
-    fill: #2d4a3e; /* dunkles Teal für den Beutel */
+    fill: #2d4a3e;
+    /* dunkles Teal für den Beutel */
 }
 
 /* Side panel (leicht heller) */
@@ -2563,7 +2645,8 @@ body {
 
 /* Checkmark */
 .bring-svg-check {
-    fill: #4ecb94; /* Bring! Grün */
+    fill: #4ecb94;
+    /* Bring! Grün */
     stroke: none;
 }
 
@@ -2576,7 +2659,8 @@ body {
 }
 
 .btn-bring:hover {
-    background: #d8dde3 !important;   /* leicht dunkler als --bg-color */
+    background: #d8dde3 !important;
+    /* leicht dunkler als --bg-color */
     color: var(--text-main) !important;
     border-color: #b8c0cc !important;
     transform: translateY(-2px) !important;
@@ -2589,7 +2673,8 @@ body {
     align-items: center;
     gap: 16px;
     margin-bottom: 20px;
-    padding-right: 40px; /* Platz für den Close-Button */
+    padding-right: 40px;
+    /* Platz für den Close-Button */
 }
 
 .bring-header-logo {
@@ -2744,4 +2829,4 @@ body {
 .bring-send-btn:hover {
     transform: translateY(-3px);
     box-shadow: var(--shadow-lg);
-}
+}

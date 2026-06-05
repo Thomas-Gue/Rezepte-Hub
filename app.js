@@ -782,7 +782,9 @@ function renderIngredients(zutaten, curPort, basePort) {
             <select class="zutat-einheit-select" onclick="event.stopPropagation()">
                 ${selectOptionsHtml}
             </select>
-            <span class="zutat-name" contenteditable="true" onclick="event.stopPropagation()">${z.name}</span>${asteriskHtml}
+            <span class="zutat-name-wrapper">
+                <span class="zutat-name" contenteditable="true" onclick="event.stopPropagation()">${z.name}</span>${asteriskHtml}
+            </span>
             <button class="zutat-delete-btn" title="Zutat entfernen" onclick="event.stopPropagation(); deleteIngredient(${index})"><i data-feather="x"></i></button>
         `;
         list.appendChild(li);
@@ -1304,27 +1306,9 @@ async function startCameraScanner() {
         // Liste alle Video-Eingabegeräte auf, falls wir das noch nicht getan haben
         if (videoDevices.length === 0) {
             const allDevices = await navigator.mediaDevices.enumerateDevices();
-            // Filtere alle Kameras heraus, die explizit 'front' im Namen tragen
-            let backCameras = allDevices.filter(device => {
-                if (device.kind !== 'videoinput') return false;
-                if (device.label.toLowerCase().includes('front')) return false;
-                return true;
-            });
-
-            // Fallback, falls der Filter alles aussortiert (z.B. wenn keine Labels verfügbar sind)
-            if (backCameras.length === 0) {
-                backCameras = allDevices.filter(device => device.kind === 'videoinput');
-            }
-            videoDevices = backCameras;
-
-            // Finde initial eine gute Linse (kein Ultra-Wide)
-            const preferredIndex = videoDevices.findIndex(d =>
-                !d.label.toLowerCase().includes('ultra') &&
-                !d.label.toLowerCase().includes('wide')
-            );
-            if (preferredIndex !== -1) {
-                currentDeviceIndex = preferredIndex;
-            }
+            // Alle Kameras ohne Ausschluss übernehmen
+            videoDevices = allDevices.filter(device => device.kind === 'videoinput');
+            currentDeviceIndex = 0; // Standardmäßig Kamera 0 nutzen
         }
 
         let constraints = { video: { facingMode: 'environment', advanced: [{ focusMode: 'continuous' }, { zoom: 2.0 }] } };
