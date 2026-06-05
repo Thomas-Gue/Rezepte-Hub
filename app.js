@@ -2035,9 +2035,16 @@ function updateRecentList() {
         }
     }
 
+    // Säubere die Liste von IDs gelöschter Rezepte
+    const originalLength = recentRecipeIds.length;
+    recentRecipeIds = recentRecipeIds.filter(id => recipes[id]);
+    if (recentRecipeIds.length !== originalLength) {
+        localStorage.setItem('recent_recipes', JSON.stringify(recentRecipeIds));
+    }
+
     let idsToRender = recentRecipeIds;
     if (idsToRender.length === 0) {
-        idsToRender = Object.keys(recipes).slice(0, 3);
+        idsToRender = Object.keys(recipes).filter(id => recipes[id]).slice(0, 3);
     }
 
     idsToRender.forEach(id => {
@@ -2980,6 +2987,11 @@ async function deleteRecipe(recipeId) {
     try {
         delete recipes[recipeId];
         localStorage.setItem('recipes_cache', JSON.stringify(recipes));
+
+        // Auch aus der "Zuletzt angesehen"-Liste entfernen
+        recentRecipeIds = recentRecipeIds.filter(rid => rid !== recipeId);
+        localStorage.setItem('recent_recipes', JSON.stringify(recentRecipeIds));
+        updateRecentList();
 
         const response = await fetch(`${FIREBASE_URL}/recipes/${recipeId}.json`, {
             method: 'DELETE'
