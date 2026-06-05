@@ -1311,22 +1311,20 @@ async function startCameraScanner() {
                     advanced: [{ focusMode: 'continuous' }, { zoom: 2.0 }]
                 }
             };
+            cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+            video.srcObject = cameraStream;
         } else {
-            // Erster Start: Rückseitenkamera (Hauptkamera) bevorzugen
+            // Erster Start: Rückseitenkamera (Hauptkamera) bevorzugen um Berechtigung zu erhalten
             constraints = {
                 video: {
                     facingMode: 'environment',
                     advanced: [{ focusMode: 'continuous' }, { zoom: 2.0 }]
                 }
             };
-        }
+            cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+            video.srcObject = cameraStream;
 
-        cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
-        video.srcObject = cameraStream;
-
-        // Wenn videoDevices noch leer ist, rufen wir erst JETZT (mit erteilter Berechtigung) enumerateDevices auf.
-        // Das garantiert vollständige Labels und korrekte, stabile Device-IDs ohne Platzhalter.
-        if (videoDevices.length === 0) {
+            // enumerateDevices aufrufen, da Berechtigung nun erteilt ist
             const allDevices = await navigator.mediaDevices.enumerateDevices();
             const rawDevices = allDevices.filter(device => device.kind === 'videoinput');
             
@@ -1339,16 +1337,59 @@ async function startCameraScanner() {
                 return true;
             });
 
-            // Finde heraus, welche Kamera der Browser gestartet hat, und passe currentDeviceIndex an
-            const activeTrack = cameraStream.getVideoTracks()[0];
-            if (activeTrack) {
-                const settings = activeTrack.getSettings();
-                const activeDeviceId = settings.deviceId;
-                if (activeDeviceId) {
-                    const idx = videoDevices.findIndex(d => d.deviceId === activeDeviceId);
-                    if (idx !== -1) {
-                        currentDeviceIndex = idx;
-                    }
+            if (videoDevices.length > 0) {
+                // Such-Priorität:
+                // 1. Label enthält die Ziffer "0" (z.B. "camera 0")
+                // 2. Label enthält "back", "rear" oder "environment"
+                // 3. Fallback: Erstes Element (Index 0)
+                let preferredIndex = -1;
+
+                // 1. Suche nach "0" im Label
+                preferredIndex = videoDevices.findIndex(d => {
+                    const label = (d.label || '').toLowerCase();
+                    return label.includes('0');
+                });
+
+                // 2. Suche nach "back", "rear" oder "environment"
+                if (preferredIndex === -1) {
+                    preferredIndex = videoDevices.findIndex(d => {
+                        const label = (d.label || '').toLowerCase();
+                        return label.includes('back') || label.includes('rear') || label.includes('environment');
+                    });
+                }
+
+                // 3. Fallback: Erstes Gerät
+                if (preferredIndex === -1) {
+                    preferredIndex = 0;
+                }
+
+                // Prüfen, welche Kamera der Browser gestartet hat
+                const activeTrack = cameraStream.getVideoTracks()[0];
+                let activeDeviceId = null;
+                if (activeTrack) {
+                    const settings = activeTrack.getSettings();
+                    activeDeviceId = settings.deviceId;
+                }
+
+                const targetDevice = videoDevices[preferredIndex];
+                if (activeDeviceId && targetDevice && activeDeviceId !== targetDevice.deviceId) {
+                    // Der Browser hat eine andere Kamera als unsere Wunschkamera geöffnet.
+                    // Wir stoppen den aktuellen Stream und starten die Wunschkamera über ihre ID.
+                    cameraStream.getTracks().forEach(track => track.stop());
+                    cameraStream = null;
+
+                    currentDeviceIndex = preferredIndex;
+                    constraints = {
+                        video: {
+                            deviceId: { exact: targetDevice.deviceId },
+                            advanced: [{ focusMode: 'continuous' }, { zoom: 2.0 }]
+                        }
+                    };
+                    cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+                    video.srcObject = cameraStream;
+                } else {
+                    // Wunschkamera läuft bereits oder wir können sie nicht vergleichen
+                    currentDeviceIndex = preferredIndex;
                 }
             }
         }
