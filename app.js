@@ -1746,18 +1746,27 @@ function setupIngredientSearch() {
             // 1. Hole lokale Kandidaten
             const candidates = getFuzzyCandidates();
 
-            // 2. Hole Firebase-Kandidaten per Direktsuche
-            const fbItems = await searchFirebaseByProductName(rawQuery, 30);
+            // 2. Hole Firebase-Kandidaten per Direktsuche (erhöhtes Limit)
+            const fbItems = await searchFirebaseByProductName(rawQuery, 100);
 
             // 3. Zusammenführen und Duplikate filtern
             const merged = [...fbItems];
+            const seenBarcodes = new Set(fbItems.map(item => item.barcode));
             const seenNames = new Set(fbItems.map(item => (item.product_name || '').toLowerCase().trim()));
 
             candidates.forEach(cand => {
-                const candName = cand.product_name.toLowerCase().trim();
-                if (!seenNames.has(candName)) {
-                    merged.push(cand);
-                    seenNames.add(candName);
+                const isManual = cand.barcode && cand.barcode.startsWith('manual-');
+                if (isManual) {
+                    const candName = cand.product_name.toLowerCase().trim();
+                    if (!seenNames.has(candName)) {
+                        merged.push(cand);
+                        seenNames.add(candName);
+                    }
+                } else {
+                    if (!seenBarcodes.has(cand.barcode)) {
+                        merged.push(cand);
+                        seenBarcodes.add(cand.barcode);
+                    }
                 }
             });
 
@@ -1771,8 +1780,25 @@ function setupIngredientSearch() {
             // Filter auf vernünftige Übereinstimmung (Score >= 0.35)
             const filtered = scored.filter(entry => entry.score >= 0.35);
 
-            // Sortieren nach Score absteigend
-            filtered.sort((a, b) => b.score - a.score);
+            // Sortieren: Erst nach Match-Güte (Bucket 1=Exzellent, 2=Gut, 3=Schwach), dann nach Rank absteigend, dann nach Score absteigend
+            filtered.sort((a, b) => {
+                const getBucket = (score) => {
+                    if (score >= 0.8) return 1;
+                    if (score >= 0.5) return 2;
+                    return 3;
+                };
+                const bucketA = getBucket(a.score);
+                const bucketB = getBucket(b.score);
+                if (bucketA !== bucketB) {
+                    return bucketA - bucketB; // Bessere Übereinstimmung (niedrigerer Bucket) zuerst
+                }
+                const rankA = getIngredientRank(a.item);
+                const rankB = getIngredientRank(b.item);
+                if (rankB !== rankA) {
+                    return rankB - rankA;
+                }
+                return b.score - a.score;
+            });
 
             // Nimm die Top 10 Ergebnisse
             const finalItems = filtered.slice(0, 10).map(entry => entry.item);
@@ -1797,6 +1823,88 @@ function setupIngredientSearch() {
     }, { capture: false });
 }
 
+function getIngredientCheckmark(item) {
+    if (!item) return '';
+
+    // Bedingung 2: Hat Preis und Produktgröße/Menge (Haken mit Kreis)
+    const hasPriceAndProduct = (item.preisProKg !== undefined && item.preisProKg !== null && item.preisProKg > 0) &&
+                               (item.product_quantity !== undefined && item.product_quantity !== null && item.product_quantity > 0);
+
+    // Bedingung 1: Parameter-Zählung (normaler Haken bei > 4 Parametern)
+    let paramCount = 0;
+    const fieldsToCount = [
+        'product_name',
+        'brands',
+        'barcode',
+        'product_quantity',
+        'preisProKg',
+        'energy-kcal_100g',
+        'proteins_100g',
+        'fat_100g',
+        'carbohydrates_100g',
+        'saturated-fat_100g',
+        'sugars_100g',
+        'fiber_100g',
+        'salt_100g'
+    ];
+
+    fieldsToCount.forEach(field => {
+        if (item[field] !== undefined && item[field] !== null && item[field] !== '') {
+            paramCount++;
+        }
+    });
+
+    // Nutri-Score (verschiedene Feld-Variationen) als 1 logischen Parameter zählen
+    const hasNutriscore = (item.nutriscore_score !== undefined && item.nutriscore_score !== null && item.nutriscore_score !== '') ||
+                          (item.nutriScoreLetter !== undefined && item.nutriScoreLetter !== null && item.nutriScoreLetter !== '') ||
+                          (item.nutriscore_grade !== undefined && item.nutriscore_grade !== null && item.nutriscore_grade !== '');
+    if (hasNutriscore) {
+        paramCount++;
+    }
+
+    if (hasPriceAndProduct) {
+        return ` <span class="ingredient-checkmark circle-check" style="color: #1da1f2; margin-left: 4px; display: inline-flex; align-items: center; vertical-align: middle;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="feather feather-check-circle" style="vertical-align: middle;"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+        </span>`;
+    } else if (paramCount > 4) {
+        return ` <span class="ingredient-checkmark simple-check" style="color: #1da1f2; margin-left: 4px; display: inline-flex; align-items: center; vertical-align: middle;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="feather feather-check" style="vertical-align: middle;"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        </span>`;
+    }
+
+    return '';
+}
+
+function getIngredientRank(item) {
+    if (!item) return 0;
+    
+    const hasPriceAndProduct = (item.preisProKg !== undefined && item.preisProKg !== null && item.preisProKg > 0) &&
+                               (item.product_quantity !== undefined && item.product_quantity !== null && item.product_quantity > 0);
+    if (hasPriceAndProduct) return 2;
+
+    let paramCount = 0;
+    const fieldsToCount = [
+        'product_name', 'brands', 'barcode', 'product_quantity', 'preisProKg',
+        'energy-kcal_100g', 'proteins_100g', 'fat_100g', 'carbohydrates_100g',
+        'saturated-fat_100g', 'sugars_100g', 'fiber_100g', 'salt_100g'
+    ];
+    fieldsToCount.forEach(field => {
+        if (item[field] !== undefined && item[field] !== null && item[field] !== '') {
+            paramCount++;
+        }
+    });
+
+    const hasNutriscore = (item.nutriscore_score !== undefined && item.nutriscore_score !== null && item.nutriscore_score !== '') ||
+                          (item.nutriScoreLetter !== undefined && item.nutriScoreLetter !== null && item.nutriScoreLetter !== '') ||
+                          (item.nutriscore_grade !== undefined && item.nutriscore_grade !== null && item.nutriscore_grade !== '');
+    if (hasNutriscore) {
+        paramCount++;
+    }
+
+    if (paramCount > 4) return 1;
+    return 0;
+}
+
 function renderIngredientResults(items, resultsEl) {
     resultsEl.innerHTML = '';
 
@@ -1809,7 +1917,8 @@ function renderIngredientResults(items, resultsEl) {
     items.forEach(item => {
         const div = document.createElement('div');
         div.className = 'ingredient-dropdown-item';
-        const brand = item.brands ? `<span class="ingredient-dropdown-brand">${item.brands}</span>` : '';
+        const checkmark = getIngredientCheckmark(item);
+        const brand = item.brands ? `<span class="ingredient-dropdown-brand">${item.brands}${checkmark}</span>` : (checkmark ? `<span class="ingredient-dropdown-brand">${checkmark}</span>` : '');
         const kcal = item['energy-kcal_100g'] != null ? `<span class="ingredient-dropdown-kcal">${item['energy-kcal_100g']} kcal</span>` : '';
         div.innerHTML = `<span class="ingredient-dropdown-name">${item.product_name || '?'}</span>${brand}${kcal}`;
 
@@ -2715,19 +2824,7 @@ const COMMON_INGREDIENTS = [
     "Hackfleisch", "Gemischtes Hackfleisch", "Rinderhackfleisch", "Lachs", "Thunfisch", "Schinken", "Speck", "Salami"
 ];
 
-function getUniqueIngredientsFromRecipes() {
-    const list = new Set();
-    if (typeof recipes === 'object' && recipes !== null) {
-        Object.values(recipes).forEach(r => {
-            if (r && r.zutaten && Array.isArray(r.zutaten)) {
-                r.zutaten.forEach(z => {
-                    if (z && z.name) list.add(z.name);
-                });
-            }
-        });
-    }
-    return Array.from(list);
-}
+// getUniqueIngredientsFromRecipes gelöscht (durch intelligenteres getFuzzyCandidates ersetzt)
 
 function getFuzzyMatchScore(s1, s2) {
     s1 = s1.toLowerCase().trim();
@@ -2759,16 +2856,77 @@ function getFuzzyMatchScore(s1, s2) {
 }
 
 function getFuzzyCandidates() {
-    const list = new Set(COMMON_INGREDIENTS);
-    getUniqueIngredientsFromRecipes().forEach(name => list.add(name));
+    const candidatesMap = new Map();
 
-    return Array.from(list).map(name => {
-        return {
+    // 1. Common ingredients als Fallback / Standardkandidaten
+    COMMON_INGREDIENTS.forEach(name => {
+        const key = name.toLowerCase().trim();
+        candidatesMap.set(key, {
             product_name: name,
             brands: "",
-            barcode: "manual-" + encodeURIComponent(name.toLowerCase()),
+            barcode: "manual-" + encodeURIComponent(key),
             'energy-kcal_100g': null
-        };
+        });
+    });
+
+    // Hilfsfunktion zur Bewertung der Vollständigkeit eines Zutat-Objekts
+    const getParamScore = (z) => {
+        let score = 0;
+        const keys = ['name', 'brands', 'barcode', 'product_quantity', 'preisProKg'];
+        keys.forEach(k => {
+            if (z[k] !== undefined && z[k] !== null && z[k] !== '') score++;
+        });
+        if (z.naehrwerte) {
+            const nvKeys = ['energy-kcal_100g', 'proteins_100g', 'fat_100g', 'carbohydrates_100g'];
+            nvKeys.forEach(k => {
+                if (z.naehrwerte[k] !== undefined && z.naehrwerte[k] !== null && z.naehrwerte[k] !== '') score++;
+            });
+        }
+        if (z.nutriscore_score !== undefined && z.nutriscore_score !== null && z.nutriscore_score !== '') score++;
+        return score;
+    };
+
+    // 2. Echte bearbeitete Zutaten aus allen Rezepten einlesen
+    if (typeof recipes === 'object' && recipes !== null) {
+        Object.values(recipes).forEach(r => {
+            if (r && r.zutaten && Array.isArray(r.zutaten)) {
+                r.zutaten.forEach(z => {
+                    if (z && z.name) {
+                        const key = z.name.toLowerCase().trim();
+                        const score = getParamScore(z);
+                        const existing = candidatesMap.get(key);
+                        const existingScore = existing ? (existing._score || 0) : -1;
+
+                        if (score > existingScore) {
+                            candidatesMap.set(key, {
+                                product_name: z.name,
+                                brands: z.brands || '',
+                                barcode: z.barcode || ("manual-" + encodeURIComponent(key)),
+                                'energy-kcal_100g': z.naehrwerte ? z.naehrwerte['energy-kcal_100g'] : null,
+                                proteins_100g: z.naehrwerte ? z.naehrwerte['proteins_100g'] : null,
+                                fat_100g: z.naehrwerte ? z.naehrwerte['fat_100g'] : null,
+                                carbohydrates_100g: z.naehrwerte ? z.naehrwerte['carbohydrates_100g'] : null,
+                                'saturated-fat_100g': z.naehrwerte ? z.naehrwerte['saturated-fat_100g'] : null,
+                                sugars_100g: z.naehrwerte ? z.naehrwerte['sugars_100g'] : null,
+                                fiber_100g: z.naehrwerte ? z.naehrwerte['fiber_100g'] : null,
+                                salt_100g: z.naehrwerte ? z.naehrwerte['salt_100g'] : null,
+                                product_quantity: z.product_quantity || null,
+                                preisProKg: z.preisProKg || null,
+                                nutriscore_score: z.nutriscore_score !== undefined ? z.nutriscore_score : null,
+                                _score: score // Interne Eigenschaft zum Vergleichen
+                            });
+                        }
+                    }
+                });
+            }
+        });
+    }
+
+    // Hilfs-Property _score entfernen vor Rückgabe
+    return Array.from(candidatesMap.values()).map(item => {
+        const clean = { ...item };
+        delete clean._score;
+        return clean;
     });
 }
 
@@ -2790,18 +2948,27 @@ function setupInlineIngredientSearch() {
             // 1. Hole lokale Kandidaten
             const candidates = getFuzzyCandidates();
 
-            // 2. Hole Firebase-Kandidaten per Direktsuche
-            const fbItems = await searchFirebaseByProductName(rawQuery, 20);
+            // 2. Hole Firebase-Kandidaten per Direktsuche (erhöhtes Limit)
+            const fbItems = await searchFirebaseByProductName(rawQuery, 50);
 
             // 3. Zusammenführen und Duplikate filtern
             const merged = [...fbItems];
+            const seenBarcodes = new Set(fbItems.map(item => item.barcode));
             const seenNames = new Set(fbItems.map(item => (item.product_name || '').toLowerCase().trim()));
 
             candidates.forEach(cand => {
-                const candName = cand.product_name.toLowerCase().trim();
-                if (!seenNames.has(candName)) {
-                    merged.push(cand);
-                    seenNames.add(candName);
+                const isManual = cand.barcode && cand.barcode.startsWith('manual-');
+                if (isManual) {
+                    const candName = cand.product_name.toLowerCase().trim();
+                    if (!seenNames.has(candName)) {
+                        merged.push(cand);
+                        seenNames.add(candName);
+                    }
+                } else {
+                    if (!seenBarcodes.has(cand.barcode)) {
+                        merged.push(cand);
+                        seenBarcodes.add(cand.barcode);
+                    }
                 }
             });
 
@@ -2815,8 +2982,25 @@ function setupInlineIngredientSearch() {
             // Filter auf vernünftige Übereinstimmung (Score >= 0.35)
             const filtered = scored.filter(entry => entry.score >= 0.35);
 
-            // Sortieren nach Score absteigend
-            filtered.sort((a, b) => b.score - a.score);
+            // Sortieren: Erst nach Match-Güte (Bucket 1=Exzellent, 2=Gut, 3=Schwach), dann nach Rank absteigend, dann nach Score absteigend
+            filtered.sort((a, b) => {
+                const getBucket = (score) => {
+                    if (score >= 0.8) return 1;
+                    if (score >= 0.5) return 2;
+                    return 3;
+                };
+                const bucketA = getBucket(a.score);
+                const bucketB = getBucket(b.score);
+                if (bucketA !== bucketB) {
+                    return bucketA - bucketB; // Bessere Übereinstimmung (niedrigerer Bucket) zuerst
+                }
+                const rankA = getIngredientRank(a.item);
+                const rankB = getIngredientRank(b.item);
+                if (rankB !== rankA) {
+                    return rankB - rankA;
+                }
+                return b.score - a.score;
+            });
 
             // Nimm die Top 8 Ergebnisse
             const finalItems = filtered.slice(0, 8).map(entry => entry.item);
@@ -2839,7 +3023,8 @@ function renderInlineResults(items, resultsEl) {
     items.forEach(item => {
         const div = document.createElement('div');
         div.className = 'ingredient-dropdown-item';
-        div.innerHTML = `<span class="ingredient-dropdown-name">${item.product_name || '?'}</span> <span class="ingredient-dropdown-brand">${item.brands || ''}</span>`;
+        const checkmark = getIngredientCheckmark(item);
+        div.innerHTML = `<span class="ingredient-dropdown-name">${item.product_name || '?'}</span> <span class="ingredient-dropdown-brand">${item.brands || ''}${checkmark}</span>`;
         div.addEventListener('click', async () => {
             resultsEl.style.display = 'none';
             document.getElementById('inline-ingredient-search').value = '';
@@ -2915,6 +3100,8 @@ function setupStandaloneSearch() {
         try {
             // Firebase Direktsuche per indiziertem product_name
             const items = await searchFirebaseByProductName(rawQuery, 15);
+            // Nach Rank sortieren
+            items.sort((a, b) => getIngredientRank(b) - getIngredientRank(a));
             spinner.style.display = 'none';
 
             ingredientSearchCache[cacheKey] = items;
@@ -2941,7 +3128,8 @@ function renderStandaloneResults(items, resultsEl) {
     items.forEach(item => {
         const div = document.createElement('div');
         div.className = 'ingredient-dropdown-item';
-        const brand = item.brands ? `<span class="ingredient-dropdown-brand">${item.brands}</span>` : '';
+        const checkmark = getIngredientCheckmark(item);
+        const brand = item.brands ? `<span class="ingredient-dropdown-brand">${item.brands}${checkmark}</span>` : (checkmark ? `<span class="ingredient-dropdown-brand">${checkmark}</span>` : '');
         const kcal = item['energy-kcal_100g'] != null
             ? `<span class="ingredient-dropdown-kcal">${item['energy-kcal_100g']} kcal</span>` : '';
         div.innerHTML = `<span class="ingredient-dropdown-name">${item.product_name || '?'}</span>${brand}${kcal}`;
